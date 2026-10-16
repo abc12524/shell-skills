@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "name": "shell-skills",
+  "description": "shell-tool 可下载的技能集：每个技能一个文件夹，内含入口脚本与配置模板。",
+  "skills": [
+    {
+      "name": "at",
+      "description": "定时任务管理（创建 / 查看 / 删除到点执行一次的命令）",
+      "path": "at",
+      "entry": "skill.py",
+      "version": "1.0.0",
+      "requires": [],
+      "config": []
+    },
+    {
+      "name": "baidu_search",
+      "description": "百度搜索 / 百科查询",
+      "path": "baidu_search",
+      "entry": "skill.py",
+      "version": "1.0.0",
+      "requires": ["requests"],
+      "config": ["BAIDU_QIANFAN_KEY"]
+    },
+    {
+      "name": "doubao_search",
+      "description": "Feedcoop 豆包搜索 API（web_search / global_search），返回结构化网页结果",
+      "path": "doubao_search",
+      "entry": "skill.py",
+      "version": "1.0.0",
+      "requires": ["requests"],
+      "config": ["FEEDCOOP_API_KEY"]
+    },
+    {
+      "name": "script",
+      "description": "脚本/代码增删改查（CRUD）+ 结构骨架",
+      "path": "script",
+      "entry": "skill.py",
+      "version": "1.0.0",
+      "requires": ["requests"],
+      "config": []
+    }
+  ]
+}
