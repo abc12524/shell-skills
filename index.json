@@ -36,12 +36,12 @@
     },
     {
       "name": "script",
-      "description": "脚本/代码增删改查（CRUD）+ 结构骨架",
+      "description": "脚本/代码增删改查（CRUD）+ 结构骨架（改代码首选）",
       "platform": ["linux", "windows", "android", "ios"],
       "path": "script",
       "entry": "skill.py",
       "version": "1.0.0",
-      "requires": ["requests"],
+      "requires": [],
       "config": []
     }
   ]
