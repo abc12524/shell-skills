@@ -56,6 +56,7 @@ shell-skills/
     {
       "name": "baidu_search",
       "description": "百度搜索 / 百科查询",
+      "platform": ["linux", "windows", "android", "ios"],
       "path": "baidu_search",
       "entry": "skill.py",
       "version": "1.0.0",
@@ -70,11 +71,26 @@ shell-skills/
 |---|---|
 | `name` | 技能名（唯一，等于文件夹名） |
 | `description` | 一句话说明，用于列表展示 |
+| `platform` | 适用平台，取值 `linux` / `windows` / `android` / `ios` 的子集；跨平台写全四个 |
 | `path` | 技能文件夹相对仓库根的路径 |
 | `entry` | 入口脚本文件名（约定 `skill.py`） |
 | `version` | 技能版本 |
 | `requires` | 额外 Python 依赖（pip 包名） |
 | `config` | 需要的配置键（环境变量名）；安装时从 `config.example.json` 生成模板 |
+
+## 平台取值
+
+根索引的 `platforms` 字段声明本仓库支持的平台集合：
+
+| 值 | 含义 |
+|---|---|
+| `linux` | Linux（含桌面 / 服务器） |
+| `windows` | Windows |
+| `android` | Android（Termux 等 Python 环境） |
+| `ios` | iOS（a-Shell / Pythonista 等） |
+
+每个技能的 `platform` 从上述集合中取子集，表示该技能可运行的平台。
+
 
 ## shell-tool 如何消费
 
