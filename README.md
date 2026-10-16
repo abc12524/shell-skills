@@ -21,6 +21,9 @@ shell-skills/
 ├── doubao_search/
 │   ├── skill.py
 │   └── config.example.json
+├── news/
+│   ├── skill.py
+│   └── config.example.json
 └── script/
     ├── skill.py
     └── _script_impl.py        # 助手模块（`_` 开头，不注册为技能）
