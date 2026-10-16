@@ -25,7 +25,10 @@ import os
 
 import requests
 
-from core.tools.envelope import error, ok
+try:  # android-agent / kelivo-agent：技能目录部署了 _envelope.py
+    from _envelope import ok, error
+except ImportError:  # shell-tool：使用 core.tools.envelope
+    from core.tools.envelope import ok, error
 
 URL_WEB = "https://open.feedcoopapi.com/search_api/web_search"
 URL_GLOBAL = "https://open.feedcoopapi.com/search_api/global_search"

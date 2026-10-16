@@ -26,7 +26,10 @@ import subprocess
 import sys
 from datetime import datetime, timedelta
 
-from core.tools.envelope import ok, error
+try:  # android-agent / kelivo-agent：技能目录部署了 _envelope.py
+    from _envelope import ok, error
+except ImportError:  # shell-tool：使用 core.tools.envelope
+    from core.tools.envelope import ok, error
 
 _IS_WIN = os.name == "nt"
 _JOB_ID_RE = re.compile(r"job\s+(\d+)", re.IGNORECASE)

@@ -16,7 +16,10 @@ import os
 
 import requests
 
-from core.tools.envelope import ok, error
+try:  # android-agent / kelivo-agent：技能目录部署了 _envelope.py
+    from _envelope import ok, error
+except ImportError:  # shell-tool：使用 core.tools.envelope
+    from core.tools.envelope import ok, error
 
 _HEADERS = {"Content-Type": "application/json"}
 _VALID_MODES = ("raw", "summary", "search", "baike", "baikelist", "quota")
