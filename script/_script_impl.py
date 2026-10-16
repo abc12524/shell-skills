@@ -21,7 +21,10 @@ from typing import Dict, List, Optional, Set
 from urllib.parse import urlparse
 from urllib.request import urlopen
 
-from core.tools.envelope import ok, error
+try:  # android-agent / kelivo-agent：技能目录部署了 _envelope.py
+    from _envelope import ok, error
+except ImportError:  # shell-tool：使用 core.tools.envelope
+    from core.tools.envelope import ok, error
 
 
 # ============================ 结构解析（供 outline） ============================
