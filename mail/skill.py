@@ -1,31 +1,26 @@
 # skill: mail
-# description: 多邮箱通用工具（163/126/yeah/qq/gmail/outlook）：列收件箱、读邮件、发邮件、查未读
+# description: 多邮箱工具（163/126/yeah/qq/gmail/outlook）：列表 / 读信 / 发信 / 未读
 # status: enable
 # usage:
-#   arguments.cmd      = list | read | send | monitor | providers | config（默认 list）
+#   arguments.cmd      = list | read | send | monitor | folders | providers | config（默认 list）
 #   arguments.provider = 163 | 126 | yeah | qq | gmail | outlook（默认 163）
-#   arguments.user     = 邮箱账号（缺省取 config.json accounts.<provider>.user，再回退 MAIL_USER）
-#   arguments.password = 密码/授权码（缺省取 config.json accounts.<provider>.pass，再回退 MAIL_PASS）
-#   arguments.args     = 参数列表：read [ID]；send [收件人, 主题, 正文]
-#   示例: {"cmd": "list"}
-#   示例: {"cmd": "read", "args": ["3"]}
-#   示例: {"cmd": "send", "args": ["a@b.com", "标题", "正文"]}
-#   示例: {"cmd": "list", "provider": "qq"}
-#   示例: {"cmd": "providers"}
-#
-# 配置（同目录 config.json，模板见 config.example.json）：
-#   accounts.<provider> = {"user": "...", "pass": "..."}  # 按服务商分别配置，可同时配多个
-#   环境变量 MAIL_PROVIDER / MAIL_USER / MAIL_PASS（单账号）、MAIL_CA_BUNDLE。
-#   优先级：arguments.{user,password} > config.json accounts.<provider> > 环境变量。
-#   - shell-tool：由项目根 .env 提供（导入 core.config 时注入 os.environ）。
-#   - android-agent / kelivo-agent：由本技能同目录 config.json 提供。
-# 依赖：仅标准库（imaplib / smtplib / email）。
-"""多邮箱通用工具 skill（列收件箱 / 读邮件 / 发邮件 / 查未读）。"""
+#   arguments.folder   = 操作文件夹（list/read/monitor 用，默认 INBOX；见 folders）
+#   arguments.args     = read 传 [邮件ID]；send 传 [收件人, 主题, 正文]
+#   账号密码：arguments.user/password > config.json accounts.<provider> > 环境变量 MAIL_USER/MAIL_PASS
+#   示例: {"cmd":"list","provider":"qq"}
+#         {"cmd":"folders"}
+#         {"cmd":"read","args":["3"],"folder":"Sent"}
+#         {"cmd":"send","args":["a@b.com","标题","正文"]}
+# 配置：同目录 config.json（模板 config.example.json），accounts.<provider>={"user","pass"}；可选 MAIL_CA_BUNDLE
+# 依赖：仅标准库
+"""多邮箱工具 skill（列表 / 读信 / 发信 / 未读）。"""
+import base64
 import email
 import email.policy
 import imaplib
 import json
 import os
+import re
 import smtplib
 import ssl
 
@@ -133,6 +128,89 @@ def _msg(raw):
     return email.message_from_bytes(raw, policy=email.policy.default)
 
 
+def _decode_utf7(s):
+    """IMAP modified UTF-7 → str。"""
+    out, i = [], 0
+    while i < len(s):
+        c = s[i]
+        if c != "&":
+            out.append(c)
+            i += 1
+            continue
+        j = s.find("-", i)
+        if j == i + 1:  # "&-" 表示 &
+            out.append("&")
+            i = j + 1
+            continue
+        if j == -1:
+            j = len(s)
+        b64 = s[i + 1:j].replace(",", "/")
+        try:
+            out.append(base64.b64decode(b64 + "=" * (-len(b64) % 4)).decode("utf-16-be"))
+        except Exception:
+            out.append(s[i:j])
+        i = j + 1
+    return "".join(out)
+
+
+def _encode_utf7(s):
+    """str → IMAP modified UTF-7（仅含非 ASCII 时与原文不同）。"""
+    out, buf = [], ""
+    for ch in s:
+        if 0x20 <= ord(ch) <= 0x7E:
+            if buf:
+                out.append("&" + base64.b64encode(buf.encode("utf-16-be")).decode().rstrip("=").replace("/", ",") + "-")
+                buf = ""
+            out.append("&-" if ch == "&" else ch)
+        else:
+            buf += ch
+    if buf:
+        out.append("&" + base64.b64encode(buf.encode("utf-16-be")).decode().rstrip("=").replace("/", ",") + "-")
+    return "".join(out)
+
+
+def _select(conn, folder):
+    """选择邮箱文件夹（默认 INBOX）；非 ASCII 名称按 modified UTF-7 编码。"""
+    name = folder or "INBOX"
+    wire = _encode_utf7(name) if any(ord(c) > 127 for c in name) else name
+    conn.select(wire)
+    return name
+
+
+def _parse_mailboxes(data):
+    boxes = []
+    for raw in data or []:
+        if not raw:
+            continue
+        line = raw.decode("utf-8", "replace") if isinstance(raw, bytes) else raw
+        m = re.match(r'\((?P<flags>[^)]*)\)\s+"(?P<delim>[^"]*)"\s+(?P<name>.+)$', line)
+        if not m:
+            continue
+        name = m.group("name").strip()
+        if len(name) >= 2 and name[0] == '"' and name[-1] == '"':
+            name = name[1:-1]
+        boxes.append({"name": _decode_utf7(name), "delim": m.group("delim"),
+                      "flags": m.group("flags").split()})
+    return boxes
+
+
+def _do_folders(cfg, user, password):
+    conn = _imap(cfg, user, password)
+    try:
+        typ, data = conn.list()
+        boxes = _parse_mailboxes(data)
+        lines = ["📂 文件夹（%d）：" % len(boxes)]
+        for b in boxes:
+            flags = ("  [%s]" % ", ".join(b["flags"])) if b["flags"] else ""
+            lines.append("  %s%s" % (b["name"], flags))
+        return ok({"folders": boxes, "text": "\n".join(lines)})
+    finally:
+        try:
+            conn.logout()
+        except Exception:
+            pass
+
+
 def _do_providers():
     lines = ["📋 支持的邮箱服务商："]
     for k, p in PROVIDERS.items():
@@ -144,15 +222,15 @@ def _do_providers():
     return ok({"providers": list(PROVIDERS), "text": "\n".join(lines)})
 
 
-def _do_list(cfg, user, password):
+def _do_list(cfg, user, password, folder="INBOX"):
     conn = _imap(cfg, user, password)
     try:
-        conn.select("INBOX")
+        _select(conn, folder)
         typ, data = conn.search(None, "ALL")
         ids = data[0].split()
         if not ids:
-            return ok({"total": 0, "mails": [], "text": "📭 收件箱为空"})
-        mails, lines = [], ["📬 收件箱共 %d 封（显示最近 20 封）" % len(ids)]
+            return ok({"total": 0, "mails": [], "text": "📭 文件夹为空"})
+        mails, lines = [], ["📬 %s 共 %d 封（显示最近 20 封）" % (folder or "INBOX", len(ids))]
         for uid in ids[-20:]:
             typ, d = conn.fetch(uid, "(RFC822.HEADER)")
             m = _msg(d[0][1])
@@ -169,10 +247,10 @@ def _do_list(cfg, user, password):
             pass
 
 
-def _do_read(cfg, user, password, uid):
+def _do_read(cfg, user, password, uid, folder="INBOX"):
     conn = _imap(cfg, user, password)
     try:
-        conn.select("INBOX")
+        _select(conn, folder)
         typ, d = conn.fetch(str(uid), "(RFC822)")
         if typ != "OK" or not d or d[0] is None:
             return error("查无此邮件: %s" % uid, code="not_found")
@@ -216,10 +294,10 @@ def _do_send(cfg, user, password, to_addr, subject, body):
     return ok({"to": to_addr, "subject": subject, "text": "✅ 已发送 → %s" % to_addr})
 
 
-def _do_monitor(cfg, user, password):
+def _do_monitor(cfg, user, password, folder="INBOX"):
     conn = _imap(cfg, user, password)
     try:
-        conn.select("INBOX")
+        _select(conn, folder)
         typ, data = conn.search(None, "UNSEEN")
         ids = data[0].split()
         if not ids:
@@ -264,25 +342,28 @@ def run(arguments):
     argv = a.get("args") or []
     if isinstance(argv, str):
         argv = [argv]
+    folder = a.get("folder") or "INBOX"
 
     if cmd == "config":
         return ok({"provider": key, "name": cfg["name"], "user": user,
                    "imap": "%s:%s" % (cfg["imap_host"], cfg["imap_port"]),
                    "smtp": "%s:%s" % (cfg["smtp_host"], cfg["smtp_port"])})
     try:
+        if cmd == "folders":
+            return _do_folders(cfg, user, password)
         if cmd == "list":
-            return _do_list(cfg, user, password)
+            return _do_list(cfg, user, password, folder)
         if cmd == "monitor":
-            return _do_monitor(cfg, user, password)
+            return _do_monitor(cfg, user, password, folder)
         if cmd == "read":
             if len(argv) < 1:
                 return error('用法: {"cmd": "read", "args": [邮件ID]}', code="invalid_argument")
-            return _do_read(cfg, user, password, argv[0])
+            return _do_read(cfg, user, password, argv[0], folder)
         if cmd == "send":
             if len(argv) < 3:
                 return error('用法: {"cmd": "send", "args": [收件人, 主题, 正文]}', code="invalid_argument")
             return _do_send(cfg, user, password, argv[0], argv[1], argv[2])
-        return error("未知命令 %r，可用: list / read / send / monitor / providers / config" % cmd,
+        return error("未知命令 %r，可用: list / read / send / monitor / folders / providers / config" % cmd,
                      code="invalid_argument")
     except Exception as e:
         return error("%s 执行失败: %s" % (cmd, e), code="io_error")
