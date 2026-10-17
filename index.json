@@ -32,7 +32,7 @@
       "entry": "skill.py",
       "version": "1.0.0",
       "requires": ["requests"],
-      "config": ["DEEPSEEK_API_KEY", "DEEPSEEK_BASE_URL"]
+      "config": ["DEEPSEEK_SEARCH_KEY", "DEEPSEEK_SEARCH_BASE_URL"]
     },
     {
       "name": "doubao_search",

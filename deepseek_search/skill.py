@@ -24,8 +24,8 @@ try:  # android-agent / kelivo-agent：技能目录部署了 _envelope.py
 except ImportError:  # shell-tool：使用 core.tools.envelope
     from core.tools.envelope import ok, error
 
-KEY_ENV = "DEEPSEEK_API_KEY"
-BASE_ENV = "DEEPSEEK_BASE_URL"
+KEY_ENV = "DEEPSEEK_SEARCH_KEY"
+BASE_ENV = "DEEPSEEK_SEARCH_BASE_URL"
 DEFAULT_BASE = "https://api.deepseek.com"
 TIMEOUT = 30
 MAX_COUNT = 50
