@@ -5,7 +5,8 @@
 #   arguments.cmd      = list | read | send | monitor | folders | providers | config（默认 list）
 #   arguments.provider = 163 | 126 | yeah | qq | gmail | outlook（默认 163）
 #   arguments.folder   = 操作文件夹（list/read/monitor 用，默认 INBOX；见 folders）
-#   arguments.args     = read 传 [邮件ID]；send 传 [收件人, 主题, 正文]
+#   arguments.args     = read 传 [邮件ID]（HTML 正文自动转纯文本）；send 传 [收件人, 主题, 正文]
+#   arguments.max_len  = read 正文截断长度（默认 8000）
 #   账号密码：arguments.user/password > config.json accounts.<provider> > 环境变量 MAIL_USER/MAIL_PASS
 #   示例: {"cmd":"list","provider":"qq"}
 #         {"cmd":"folders"}
@@ -23,6 +24,7 @@ import os
 import re
 import smtplib
 import ssl
+from html import unescape as _unescape
 
 from email.message import EmailMessage
 
@@ -33,6 +35,9 @@ except ImportError:  # shell-tool：使用 core.tools.envelope
 
 # 移动端默认证书包（不存在时回退系统默认）。
 DEFAULT_CA_BUNDLE = "/data/user/0/com.androidagent/files/ca_bundle.crt"
+
+# 正文默认截断长度（可用 arguments.max_len 覆盖；HTML 邮件会先转纯文本）。
+DEFAULT_MAX_BODY = 8000
 
 PROVIDERS = {
     "163": dict(name="网易163邮箱", imap_host="imap.163.com", imap_port=143, imap_ssl=False,
@@ -126,6 +131,34 @@ def _smtp(cfg, user, password):
 
 def _msg(raw):
     return email.message_from_bytes(raw, policy=email.policy.default)
+
+
+def _looks_like_html(text):
+    return bool(re.search(r"(?is)<(html|body|div|table|p|style|span|a)\b", text or ""))
+
+
+def _html_to_text(html):
+    """把 HTML 邮件正文转为可读纯文本（去 style/script、标签，解实体）。"""
+    text = re.sub(r"(?is)<(script|style|head)[^>]*>.*?</\1>", "", html)
+    text = re.sub(r"(?is)<br\s*/?>", "\n", text)
+    text = re.sub(r"(?is)<(p|div|h[1-6]|tr|table|ul|ol|blockquote)[^>]*>", "\n", text)
+    text = re.sub(r"(?is)</(p|div|h[1-6]|tr|table|ul|ol|blockquote|li)>", "\n", text)
+    text = re.sub(r"(?is)</t[dh]>", "\t", text)
+    text = re.sub(r"(?is)<td[^>]*>", "", text)
+    text = re.sub(r"(?is)</?li[^>]*>", "\n", text)
+    text = re.sub(r"(?is)<[^>]+>", "", text)
+    text = _unescape(text)
+    text = text.replace("\xa0", " ").replace("\u3000", " ")
+    out, blank = [], 0
+    for line in text.split("\n"):
+        line = line.rstrip()
+        if line:
+            out.append(line)
+            blank = 0
+        elif blank == 0:
+            out.append("")
+            blank = 1
+    return "\n".join(out).strip()
 
 
 def _decode_utf7(s):
@@ -247,7 +280,7 @@ def _do_list(cfg, user, password, folder="INBOX"):
             pass
 
 
-def _do_read(cfg, user, password, uid, folder="INBOX"):
+def _do_read(cfg, user, password, uid, folder="INBOX", max_len=DEFAULT_MAX_BODY):
     conn = _imap(cfg, user, password)
     try:
         _select(conn, folder)
@@ -255,21 +288,27 @@ def _do_read(cfg, user, password, uid, folder="INBOX"):
         if typ != "OK" or not d or d[0] is None:
             return error("查无此邮件: %s" % uid, code="not_found")
         m = _msg(d[0][1])
-        body = None
+        body, ctype, html = None, "text/plain", None
         if m.is_multipart():
             for part in m.walk():
+                if "attachment" in str(part.get("Content-Disposition") or "").lower():
+                    continue
                 ct = part.get_content_type()
-                if ct == "text/plain":
-                    body = part.get_content(); break
-                if ct == "text/html" and not body:
-                    body = part.get_content()
+                if ct == "text/plain" and body is None:
+                    body, ctype = part.get_content(), "text/plain"
+                elif ct == "text/html" and html is None:
+                    html = part.get_content()
+            if body is None and html is not None:
+                body, ctype = html, "text/html"
         else:
-            body = m.get_content()
-        body = (body or "(空或无法解析)")[:3000]
+            body, ctype = m.get_content(), m.get_content_type()
+        if ctype == "text/html" or _looks_like_html(body):
+            body = _html_to_text(body)
+        body = (body or "(空或无法解析)")[:max_len]
         head = "📌 主题: %s\n👤 发件人: %s\n📅 日期: %s" % (m.get("Subject", "(无主题)"),
                                                       m.get("From", "(未知)"), m.get("Date", ""))
-        return ok({"id": str(uid), "subject": str(m.get("Subject", "")), "body": body,
-                   "text": head + "\n\n" + body})
+        return ok({"id": str(uid), "subject": str(m.get("Subject", "")),
+                   "content_type": ctype, "body": body, "text": head + "\n\n" + body})
     finally:
         try:
             conn.logout()
@@ -343,6 +382,10 @@ def run(arguments):
     if isinstance(argv, str):
         argv = [argv]
     folder = a.get("folder") or "INBOX"
+    try:
+        max_len = int(a.get("max_len") or DEFAULT_MAX_BODY)
+    except (TypeError, ValueError):
+        max_len = DEFAULT_MAX_BODY
 
     if cmd == "config":
         return ok({"provider": key, "name": cfg["name"], "user": user,
@@ -358,7 +401,7 @@ def run(arguments):
         if cmd == "read":
             if len(argv) < 1:
                 return error('用法: {"cmd": "read", "args": [邮件ID]}', code="invalid_argument")
-            return _do_read(cfg, user, password, argv[0], folder)
+            return _do_read(cfg, user, password, argv[0], folder, max_len)
         if cmd == "send":
             if len(argv) < 3:
                 return error('用法: {"cmd": "send", "args": [收件人, 主题, 正文]}', code="invalid_argument")
