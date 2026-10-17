@@ -136,48 +136,41 @@ def fmt_time(time_val):
     return f"{t // 100:02d}:{t % 100:02d}"
 
 
-def fmt_header(data, location):
-    """生成 Markdown 标题行。"""
-    now = datetime.now().strftime("%Y-%m-%d %H:%M")
-    return (
-        f"# 🌤️ {place_name(data, location)} 天气\n\n"
-        f"> 数据来源: [wttr.in](https://wttr.in) | 更新时间: {now}\n"
-    )
+def _day_desc(day):
+    """当日代表性天气：取逐时里出现最多的天气（忽略未知码）。"""
+    counts, order = {}, []
+    for h in day.get("hourly") or []:
+        d = describe_code(h.get("weatherCode", ""))
+        if d.startswith("未知"):
+            continue
+        counts[d] = counts.get(d, 0) + 1
+        if d not in order:
+            order.append(d)
+    return max(order, key=lambda d: counts[d]) if counts else "—"
 
 
-def fmt_day(day, idx):
-    """生成单日 Markdown 段落。"""
+def _day_rain(day):
+    """当日最大降水概率（%）。"""
+    vals = [int(h.get("chanceofrain") or 0) for h in (day.get("hourly") or [])]
+    return max(vals) if vals else 0
+
+
+def _day_wind(day):
+    """当日最大风速（km/h）。"""
+    vals = [int(h.get("windspeedKmph") or 0) for h in (day.get("hourly") or [])]
+    return max(vals) if vals else 0
+
+
+def _date_label(day, idx):
+    """日期列：今天 / MM-DD 周X。"""
+    if idx == 0:
+        return "今天"
     date_str = day.get("date", "")
     try:
         dt = datetime.strptime(date_str, "%Y-%m-%d")
-        title = f"{date_str} ({WEEKDAYS_CN[dt.weekday()]})"
+        return f"{dt.strftime('%m-%d')} {WEEKDAYS_CN[dt.weekday()]}"
     except ValueError:
-        title = date_str
-
-    prefix = "## 今天" if idx == 0 else f"## {title}"
-    lines = [prefix, ""]
-    lines.append(
-        f"- **气温**: {day.get('mintempC', '?')}°C ~ {day.get('maxtempC', '?')}°C"
-        f" (平均 {day.get('avgtempC', '?')}°C)"
-    )
-
-    astronomy = (day.get("astronomy") or [{}])[0]
-    lines.append(f"- **日出/日落**: {astronomy.get('sunrise', '?')} / {astronomy.get('sunset', '?')}")
-    lines.append(f"- **紫外线指数**: {day.get('uvIndex', '?')}")
-    lines.append("")
-    lines.append("| 时段 | 天气 | 温度 | 体感 | 风速 | 湿度 | 降水概率 |")
-    lines.append("|------|------|------|------|------|------|----------|")
-
-    for h in day.get("hourly") or []:
-        cn = describe_code(h.get("weatherCode", ""))
-        lines.append(
-            f"| {fmt_time(h.get('time', ''))} | {cn} | {h.get('tempC', '?')}°C "
-            f"| {h.get('FeelsLikeC', '?')}°C | {h.get('windspeedKmph', '?')} km/h "
-            f"| {h.get('humidity', '?')}% | {h.get('chanceofrain', '?')}% |"
-        )
-
-    lines.append("")
-    return "\n".join(lines)
+        return date_str
 
 
 def fmt_oneline(data, location):
@@ -223,12 +216,44 @@ def day_summary(day, idx):
 
 
 def build_markdown(data, location, days):
-    """生成完整 Markdown 文本。"""
-    parts = [fmt_header(data, location)]
-    for i, day in enumerate(pick_days(data, days)):
-        parts.append(fmt_day(day, i))
-        parts.append("---\n")
-    return "\n".join(parts)
+    """生成完整 Markdown：一张逐日汇总表 + 今日逐时表（不逐日重复罗列）。"""
+    now = datetime.now().strftime("%Y-%m-%d %H:%M")
+    days_list = pick_days(data, days)
+    lines = [
+        f"# 🌤️ {place_name(data, location)} 天气",
+        "",
+        f"> 来源 wttr.in ｜ 更新 {now}",
+        "",
+        "| 日期 | 天气 | 气温 | 降水 | 风 | 日出/日落 | UV |",
+        "|------|------|------|------|----|-----------|----|",
+    ]
+    for i, day in enumerate(days_list):
+        astro = (day.get("astronomy") or [{}])[0]
+        lines.append(
+            f"| {_date_label(day, i)} | {_day_desc(day)} "
+            f"| {day.get('mintempC', '?')}～{day.get('maxtempC', '?')}°C "
+            f"| {_day_rain(day)}% | {_day_wind(day)} km/h "
+            f"| {astro.get('sunrise', '?')} / {astro.get('sunset', '?')} "
+            f"| {day.get('uvIndex', '?')} |"
+        )
+
+    hourly = days_list[0].get("hourly") or []
+    if hourly:
+        lines += [
+            "",
+            "**今日逐时**",
+            "",
+            "| 时段 | 天气 | 温度 | 体感 | 湿度 | 降水 |",
+            "|------|------|------|------|------|------|",
+        ]
+        for h in hourly:
+            lines.append(
+                f"| {fmt_time(h.get('time', ''))} | {describe_code(h.get('weatherCode', ''))} "
+                f"| {h.get('tempC', '?')}°C | {h.get('FeelsLikeC', '?')}°C "
+                f"| {h.get('humidity', '?')}% | {h.get('chanceofrain', '?')}% |"
+            )
+    lines.append("")
+    return "\n".join(lines)
 
 
 def run(arguments):
