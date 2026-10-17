@@ -1,0 +1,6 @@
+{
+  "MAIL_PROVIDER": "163",
+  "MAIL_USER": "your-account@163.com",
+  "MAIL_PASS": "your-auth-code",
+  "MAIL_CA_BUNDLE": ""
+}

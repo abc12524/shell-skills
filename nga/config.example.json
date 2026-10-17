@@ -1,0 +1,6 @@
+{
+  "NGA_DOMAIN": "https://bbs.nga.cn",
+  "NGA_COOKIE": "ngaPassportUid=xxx; ngaPassportCid=yyy",
+  "NGA_INSECURE": "",
+  "NGA_COOKIE_FILE": ""
+}

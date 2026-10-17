@@ -45,6 +45,16 @@
       "config": []
     },
     {
+      "name": "mail",
+      "description": "多邮箱通用工具（163/126/yeah/qq/gmail/outlook）：列收件箱 / 读邮件 / 发邮件 / 查未读",
+      "platform": ["linux", "windows", "android", "ios"],
+      "path": "mail",
+      "entry": "skill.py",
+      "version": "1.0.0",
+      "requires": [],
+      "config": ["MAIL_PROVIDER", "MAIL_USER", "MAIL_PASS", "MAIL_CA_BUNDLE"]
+    },
+    {
       "name": "news",
       "description": "查询 MySQL 新闻库：早报/晚报/热榜（今日）与关键词检索",
       "platform": ["linux", "windows", "android", "ios"],
@@ -55,6 +65,16 @@
       "config": ["MYSQL_HOST", "MYSQL_PORT", "MYSQL_USER", "MYSQL_PASSWORD", "MYSQL_DB"]
     },
     {
+      "name": "nga",
+      "description": "NGA 论坛（bbs.nga.cn）浏览：版块分类 / 帖子列表 / 帖子回复 / 版块搜索 / 登录",
+      "platform": ["linux", "windows", "android", "ios"],
+      "path": "nga",
+      "entry": "skill.py",
+      "version": "1.0.0",
+      "requires": ["requests"],
+      "config": ["NGA_DOMAIN", "NGA_COOKIE", "NGA_INSECURE", "NGA_COOKIE_FILE"]
+    },
+    {
       "name": "ov",
       "description": "OpenViking 外置记忆统一入口（语义搜索 / 写入 / 读取 / 目录 / 遗忘 / Session）",
       "platform": ["linux", "windows", "android", "ios"],
@@ -63,6 +83,16 @@
       "version": "1.0.0",
       "requires": ["requests"],
       "config": ["OPENVIKING_URL", "OPENVIKING_KEY", "OPENVIKING_USER", "OPENVIKING_AGENT", "OV_SEARCH_THRESHOLD", "OV_SEARCH_LIMIT", "OV_FIND_THRESHOLD", "OV_FIND_LIMIT"]
+    },
+    {
+      "name": "s1",
+      "description": "Stage1st（S1/Discuz!）论坛浏览：版块列表 / 帖子列表 / 帖子内容 / 登录 / 回复",
+      "platform": ["linux", "windows", "android", "ios"],
+      "path": "s1",
+      "entry": "skill.py",
+      "version": "1.0.0",
+      "requires": ["requests"],
+      "config": ["S1_HOST", "S1_USERNAME", "S1_PASSWORD", "S1_COOKIE_FILE"]
     },
     {
       "name": "script",
