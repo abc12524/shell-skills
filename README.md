@@ -18,6 +18,9 @@ shell-skills/
 ├── baidu_search/
 │   ├── skill.py               # 入口脚本
 │   └── config.example.json    # 配置模板（真实 config.json 本地生成、不入库）
+├── deepseek_search/
+│   ├── skill.py               # 网页搜索 / 抓取（官方自研搜索引擎）
+│   └── config.example.json
 ├── doubao_search/
 │   ├── skill.py
 │   └── config.example.json

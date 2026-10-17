@@ -25,6 +25,16 @@
       "config": ["BAIDU_QIANFAN_KEY"]
     },
     {
+      "name": "deepseek_search",
+      "description": "DeepSeek 网页搜索 / 抓取（官方自研搜索引擎），返回结构化网页结果",
+      "platform": ["linux", "windows", "android", "ios"],
+      "path": "deepseek_search",
+      "entry": "skill.py",
+      "version": "1.0.0",
+      "requires": ["requests"],
+      "config": ["DEEPSEEK_API_KEY", "DEEPSEEK_BASE_URL"]
+    },
+    {
       "name": "doubao_search",
       "description": "Feedcoop 豆包搜索 API（web_search / global_search），返回结构化网页结果",
       "platform": ["linux", "windows", "android", "ios"],
