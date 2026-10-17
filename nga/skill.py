@@ -123,19 +123,22 @@ class NGAClient:
 
     def get_categories(self):
         raw = self._get(f"{self.domain}/app_api.php", {"__lib": "home", "__act": "category"})
-        return json.loads(raw)
+        return _loads_tolerant(raw)[0]
 
     def get_forum_topics(self, fid, page=1, stid=None):
         params = {"page": page, "lite": "js", "noprefix": ""}
         params["stid" if stid else "fid"] = stid or fid
-        return json.loads(_clean_js(self._get(f"{self.domain}/thread.php", params)))
+        return _loads_tolerant(_clean_js(self._get(f"{self.domain}/thread.php", params)))[0]
 
     def read_topic(self, tid, page=1):
         params = {"tid": tid, "page": page, "__output": "8", "noprefix": "", "v2": ""}
-        return json.loads(_clean_js(self._get(f"{self.domain}/read.php", params)))
+        data, truncated = _loads_tolerant(_clean_js(self._get(f"{self.domain}/read.php", params)))
+        if truncated and isinstance(data, dict):
+            data["_truncated"] = True
+        return data
 
     def search_forum(self, keyword):
-        return json.loads(_clean_js(self._get(f"{self.domain}/forum.php", {"__output": "8", "key": keyword})))
+        return _loads_tolerant(_clean_js(self._get(f"{self.domain}/forum.php", {"__output": "8", "key": keyword})))[0]
 
 
 # ============= 解析助手 =============
@@ -165,6 +168,54 @@ def _clean_js(text):
     return text.replace('\t', ' ')
 
 
+def _repair_truncated_json(text):
+    """NGA 偶发返回被截断的 JSON：截到最后一个完整容器闭合处并补全括号。"""
+    stack = []
+    safe_idx = -1
+    safe_stack = None
+    instr = False
+    esc = False
+    for i, c in enumerate(text):
+        if instr:
+            if esc:
+                esc = False
+            elif c == "\\":
+                esc = True
+            elif c == '"':
+                instr = False
+            continue
+        if c == '"':
+            instr = True
+        elif c in "{[":
+            stack.append("}" if c == "{" else "]")
+        elif c in "}]":
+            if stack:
+                stack.pop()
+                safe_idx = i + 1
+                safe_stack = list(stack)
+    if safe_idx < 0 or safe_stack is None:
+        return None
+    prefix = text[:safe_idx].rstrip().rstrip(",")
+    return prefix + "".join(reversed(safe_stack))
+
+
+def _loads_tolerant(text):
+    """尽可能解析 NGA 的 JSON：严格 → 宽松 → 修复截断。返回 (data, truncated)。"""
+    for kwargs in ({}, {"strict": False}):
+        try:
+            return json.loads(text, **kwargs), False
+        except ValueError:
+            pass
+    fixed = _repair_truncated_json(text)
+    if fixed is not None:
+        for kwargs in ({}, {"strict": False}):
+            try:
+                return json.loads(fixed, **kwargs), True
+            except ValueError:
+                pass
+    raise ValueError("响应无法解析为 JSON")
+
+
 def _strip_html(text):
     if not isinstance(text, str):
         return str(text)
@@ -172,6 +223,8 @@ def _strip_html(text):
 
 
 def _unescape(text):
+    if not isinstance(text, str):
+        text = str(text)
     for a, b in (('&amp;', '&'), ('&lt;', '<'), ('&gt;', '>'), ('&nbsp;', ' '),
                  ('<br/>', '\n'), ('<br>', '\n')):
         text = text.replace(a, b)
@@ -279,8 +332,9 @@ def _do_read(client, a):
         user_map[uid_str] = _clean_author(user_map[uid_str])
 
     replies_raw = d.get("__R") or {}
-    r_rows = d.get("__R__ROWS", 0)
-    all_rows = d.get("__ROWS", 0)
+    present = [k for k in replies_raw if str(k).isdigit()]
+    r_rows = d.get("__R__ROWS") or len(present)
+    all_rows = d.get("__ROWS") or len(present)
     total_pages = max(1, (all_rows + 19) // 20) if all_rows else 1
 
     items = []
@@ -305,9 +359,11 @@ def _do_read(client, a):
         lines.append(f"pid={r['pid']} | {r['postdate']}")
         lines.append(r["content"] if r["content"] else "*(无内容)*")
         lines.append("")
+    if data.get("_truncated"):
+        lines.append("（注：NGA 返回被截断，仅显示已完整返回的楼层）")
     lines.append(f"--- 第 {page}/{total_pages} 页 ---")
     return ok({"tid": tid, "subject": subject, "page": page, "total_pages": total_pages,
-               "replies": items, "text": "\n".join(lines)})
+               "truncated": bool(data.get("_truncated")), "replies": items, "text": "\n".join(lines)})
 
 
 def _do_search(client, a):
