@@ -4,17 +4,21 @@
 # usage:
 #   arguments.cmd      = list | read | send | monitor | providers | config（默认 list）
 #   arguments.provider = 163 | 126 | yeah | qq | gmail | outlook（默认 163）
-#   arguments.user     = 邮箱账号（缺省读环境变量 MAIL_USER）
-#   arguments.password = 密码/授权码（缺省读环境变量 MAIL_PASS）
+#   arguments.user     = 邮箱账号（缺省取 config.json accounts.<provider>.user，再回退 MAIL_USER）
+#   arguments.password = 密码/授权码（缺省取 config.json accounts.<provider>.pass，再回退 MAIL_PASS）
 #   arguments.args     = 参数列表：read [ID]；send [收件人, 主题, 正文]
 #   示例: {"cmd": "list"}
 #   示例: {"cmd": "read", "args": ["3"]}
 #   示例: {"cmd": "send", "args": ["a@b.com", "标题", "正文"]}
+#   示例: {"cmd": "list", "provider": "qq"}
 #   示例: {"cmd": "providers"}
 #
-# 配置：账号/密码读取环境变量 MAIL_USER / MAIL_PASS（可选 MAIL_PROVIDER / MAIL_CA_BUNDLE）。
+# 配置（同目录 config.json，模板见 config.example.json）：
+#   accounts.<provider> = {"user": "...", "pass": "..."}  # 按服务商分别配置，可同时配多个
+#   环境变量 MAIL_PROVIDER / MAIL_USER / MAIL_PASS（单账号）、MAIL_CA_BUNDLE。
+#   优先级：arguments.{user,password} > config.json accounts.<provider> > 环境变量。
 #   - shell-tool：由项目根 .env 提供（导入 core.config 时注入 os.environ）。
-#   - android-agent / kelivo-agent：由本技能同目录 config.json 提供（模板见 config.example.json）。
+#   - android-agent / kelivo-agent：由本技能同目录 config.json 提供。
 # 依赖：仅标准库（imaplib / smtplib / email）。
 """多邮箱通用工具 skill（列收件箱 / 读邮件 / 发邮件 / 查未读）。"""
 import email
@@ -60,21 +64,36 @@ ID_ARGS = '("name" "mailcli" "version" "1.0.0" "vendor" "mailcli" "support-email
 
 
 # ============= 配置 =============
-def _load_config():
-    """把本技能文件夹内的 config.json 注入环境变量（不覆盖已有 env）。
+_CONFIG = {}
 
-    配置与脚本同目录：mail/config.json（模板见 config.example.json），键为环境变量名。
+
+def _load_config():
+    """读取本技能文件夹内的 config.json。
+
+    配置与脚本同目录：mail/config.json（模板见 config.example.json）。
+    既支持按服务商分组的 accounts，也支持顶层环境变量键（注入 os.environ）。
     """
+    global _CONFIG
     path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
     try:
         with open(path, encoding="utf-8") as f:
             cfg = json.load(f)
     except (OSError, ValueError):
         return
-    if isinstance(cfg, dict):
-        for key, value in cfg.items():
-            if value and not os.environ.get(key):
-                os.environ[key] = str(value)
+    if not isinstance(cfg, dict):
+        return
+    _CONFIG = cfg
+    for key, value in cfg.items():
+        if isinstance(value, str) and value and not os.environ.get(key):
+            os.environ[key] = value
+
+
+def _account(provider):
+    """取 config.json 中 accounts.<provider> 的 {user, pass}，无则回退顶层 MAIL_USER/MAIL_PASS。"""
+    acc = (_CONFIG.get("accounts") or {}).get(provider) or {}
+    user = acc.get("user") or acc.get("username") or os.environ.get("MAIL_USER")
+    password = acc.get("pass") or acc.get("password") or os.environ.get("MAIL_PASS")
+    return user, password
 
 
 def _ssl_ctx():
@@ -234,10 +253,12 @@ def run(arguments):
         return error("不支持的邮箱服务商 %r，可用: %s" % (key, ", ".join(PROVIDERS)), code="invalid_argument")
     cfg = PROVIDERS[key]
 
-    user = a.get("user") or os.environ.get("MAIL_USER")
-    password = a.get("password") or os.environ.get("MAIL_PASS")
+    user, password = _account(key)
+    user = a.get("user") or user
+    password = a.get("password") or password
     if not user or not password:
-        return error("缺少账号/密码：请在 arguments 传 user/password，或设置环境变量 MAIL_USER/MAIL_PASS",
+        return error("缺少账号/密码：请在 config.json 的 accounts.%s 配置，或在 arguments 传 "
+                     "user/password，或设置环境变量 MAIL_USER/MAIL_PASS" % key,
                      code="invalid_argument")
 
     argv = a.get("args") or []

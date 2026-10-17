@@ -1,6 +1,11 @@
 {
   "MAIL_PROVIDER": "163",
-  "MAIL_USER": "your-account@163.com",
-  "MAIL_PASS": "your-auth-code",
-  "MAIL_CA_BUNDLE": ""
+  "MAIL_CA_BUNDLE": "",
+  "accounts": {
+    "163": { "user": "your-account@163.com", "pass": "your-auth-code" },
+    "126": { "user": "your-account@126.com", "pass": "your-auth-code" },
+    "qq": { "user": "your-account@qq.com", "pass": "your-auth-code" },
+    "gmail": { "user": "your-account@gmail.com", "pass": "your-app-password" },
+    "outlook": { "user": "your-account@outlook.com", "pass": "your-app-password" }
+  }
 }
