@@ -300,6 +300,13 @@ def _read_ifds(exif_dict, only=None):
     return out
 
 
+def _has_exif(exif_dict):
+    """是否含 EXIF：按原始数据判断（含缩略图），不受展示层过滤指针标签的影响。"""
+    if exif_dict.get("thumbnail"):
+        return True
+    return any(exif_dict.get(ifd) for ifd in IFD_KEYS)
+
+
 def _gps_block(exif_dict):
     gps = exif_dict.get("GPS") or {}
     lat = gps.get(piexif.GPSIFD.GPSLatitude)
@@ -382,7 +389,7 @@ def _do_read(paths, a):
             errors.append({"path": src, "error": f"{type(exc).__name__}: {exc}"})
             continue
         ifds = _read_ifds(exif_dict, ifd_filter)
-        item = {"path": src, "has_exif": bool(ifds), "ifds": ifds}
+        item = {"path": src, "has_exif": _has_exif(exif_dict), "ifds": ifds}
         gps = _gps_block(exif_dict)
         if gps:
             item["gps"] = gps
