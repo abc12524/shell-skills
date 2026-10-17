@@ -26,6 +26,10 @@ shell-skills/
 ├── news/
 │   ├── skill.py
 │   └── config.example.json
+├── ov/
+│   ├── skill.py               # 入口（分发 action）
+│   ├── _ov_impl.py            # 助手模块（`_` 开头，不注册）
+│   └── config.example.json
 ├── script/
 │   ├── skill.py
 │   └── _script_impl.py        # 助手模块（`_` 开头，不注册为技能）

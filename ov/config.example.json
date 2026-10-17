@@ -1,0 +1,6 @@
+{
+  "OPENVIKING_URL": "http://127.0.0.1:1933",
+  "OPENVIKING_KEY": "your-openviking-key",
+  "OPENVIKING_USER": "your-user",
+  "OPENVIKING_AGENT": "default"
+}

@@ -55,6 +55,16 @@
       "config": ["MYSQL_HOST", "MYSQL_PORT", "MYSQL_USER", "MYSQL_PASSWORD", "MYSQL_DB"]
     },
     {
+      "name": "ov",
+      "description": "OpenViking 外置记忆统一入口（语义搜索 / 写入 / 读取 / 目录 / 遗忘 / Session）",
+      "platform": ["linux", "windows", "android", "ios"],
+      "path": "ov",
+      "entry": "skill.py",
+      "version": "1.0.0",
+      "requires": ["requests"],
+      "config": ["OPENVIKING_URL", "OPENVIKING_KEY", "OPENVIKING_USER", "OPENVIKING_AGENT"]
+    },
+    {
       "name": "script",
       "description": "脚本/代码增删改查（CRUD）+ 结构骨架（改代码首选）",
       "platform": ["linux", "windows", "android", "ios"],
