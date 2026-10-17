@@ -5,7 +5,7 @@
 #   arguments.mode = search（默认，POST /v1/tools/search）| fetch（POST /v1/tools/fetch）
 #   search 模式:
 #     arguments.query = 搜索词（必填，1~128 字符，支持搜索语法 site:/"..." /lang:/after:/before: 等）
-#     arguments.count = 返回条数，默认 10，范围 1~50
+#     arguments.count = 返回条数，默认 5，范围 1~50
 #     arguments.need_content = true|false，是否返回网页正文 content，默认 false
 #     arguments.ori_question = 触发搜索的用户原始问题（可选，有助理解意图）
 #     arguments.localization = 优先返回本地化结果的 IP 地址（可选，默认空）
@@ -101,11 +101,11 @@ def _post(path, payload, timeout=TIMEOUT):
     return resp.json()
 
 
-def search(query, count=10, need_content=False, ori_question="", localization="", timeout=TIMEOUT):
+def search(query, count=5, need_content=False, ori_question="", localization="", timeout=TIMEOUT):
     """调用 Search 接口，返回规范化结果列表。"""
     payload = {
         "query": query,
-        "count": max(1, min(_as_int(count, 10), MAX_COUNT)),
+        "count": max(1, min(_as_int(count, 5), MAX_COUNT)),
         "need_content": bool(need_content),
     }
     if ori_question:
@@ -150,7 +150,7 @@ def run(arguments):
                 return error("缺少必填参数 query", code="missing_argument")
             results = search(
                 query,
-                count=a.get("count", 10),
+                count=a.get("count", 5),
                 need_content=_as_bool(a.get("need_content"), False),
                 ori_question=(a.get("ori_question") or "").strip(),
                 localization=(a.get("localization") or "").strip(),
