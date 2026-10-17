@@ -36,8 +36,10 @@ shell-skills/
 ├── tplink_ptz/
 │   ├── skill.py
 │   └── tplink.conf.example    # 多摄像头 ini 配置模板（真实 tplink.conf 不入库）
-└── wait/
-    └── skill.py
+├── wait/
+│   └── skill.py
+└── weather/
+    └── skill.py               # wttr.in 天气查询（默认武汉）
 ```
 
 ## 技能文件夹约定

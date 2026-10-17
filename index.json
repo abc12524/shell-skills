@@ -93,6 +93,16 @@
       "version": "1.0.0",
       "requires": [],
       "config": []
+    },
+    {
+      "name": "weather",
+      "description": "wttr.in 天气查询（默认武汉）：Markdown 日报 / 一行摘要 / 结构化 JSON，可落盘",
+      "platform": ["linux", "windows", "android", "ios"],
+      "path": "weather",
+      "entry": "skill.py",
+      "version": "1.0.0",
+      "requires": [],
+      "config": []
     }
   ]
 }
