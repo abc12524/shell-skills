@@ -45,10 +45,16 @@ shell-skills/
 ├── tplink_ptz/
 │   ├── skill.py
 │   └── tplink.conf.example    # 多摄像头 ini 配置模板（真实 tplink.conf 不入库）
+├── volc_balance/
+│   ├── skill.py               # 火山引擎余额（官方 OpenAPI，需 AK/SK）
+│   └── config.example.json
 ├── wait/
 │   └── skill.py
-└── weather/
-    └── skill.py               # wttr.in 天气查询（默认武汉）
+├── weather/
+│   └── skill.py               # wttr.in 天气查询（默认武汉）
+└── zhipu_balance/
+    ├── skill.py               # 智谱 BigModel 余额（控制台接口）
+    └── config.example.json
 ```
 
 ## 技能文件夹约定
