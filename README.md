@@ -11,56 +11,29 @@
 
 ```
 shell-skills/
-├── index.json                 # 根索引：技能名 + 说明（shell-tool 据此列出可选技能）
+├── index.json          # 根索引：技能名 + 说明（shell-tool 据此列出可选技能）
 ├── README.md
-├── at/
-│   └── skill.py               # 入口脚本（头部含 # skill: at）
-├── baidu_search/
-│   ├── skill.py               # 入口脚本
-│   └── config.example.json    # 配置模板（真实 config.json 本地生成、不入库）
-├── deepseek_search/
-│   ├── skill.py               # 网页搜索 / 抓取（官方自研搜索引擎）
-│   └── config.example.json
-├── doubao_search/
-│   ├── skill.py
-│   └── config.example.json
-├── dustls/
-│   └── skill.py               # 包装外部 dust 可执行文件
-├── exif/
-│   └── skill.py               # 图片 EXIF 工具（读取/移除 GPS/移除全部/写入/备注），依赖 piexif
-├── mail/
-│   ├── skill.py               # 多邮箱通用工具（列表/读取/发送/未读）
-│   └── config.example.json    # 账号/授权码模板（真实 config.json 不入库）
-├── news/
-│   ├── skill.py
-│   └── config.example.json
-├── nga/
-│   ├── skill.py               # NGA 论坛浏览（分类/帖子/回复/搜索）
-│   └── config.example.json
-├── ov/
-│   ├── skill.py               # 入口（分发 action）
-│   ├── _ov_impl.py            # 助手模块（`_` 开头，不注册）
-│   └── config.example.json
-├── s1/
-│   ├── skill.py               # Stage1st 论坛浏览（版块/帖子/回复）
-│   └── config.example.json
-├── script/
-│   ├── skill.py
-│   └── _script_impl.py        # 助手模块（`_` 开头，不注册为技能）
-├── tplink_ptz/
-│   ├── skill.py
-│   └── tplink.conf.example    # 多摄像头 ini 配置模板（真实 tplink.conf 不入库）
-├── volc_balance/
-│   ├── skill.py               # 火山引擎余额（官方 OpenAPI，需 AK/SK）
-│   └── config.example.json
-├── wait/
-│   └── skill.py
-├── weather/
-│   └── skill.py               # wttr.in 天气查询（默认武汉）
-└── zhipu_balance/
-    ├── skill.py               # 智谱 BigModel 余额（控制台接口）
-    └── config.example.json
+├── at/                 定时任务管理（创建 / 查看 / 删除到点执行一次的命令）
+├── baidu_search/       百度搜索 / 百科查询
+├── deepseek_search/    DeepSeek 网页搜索 / 抓取（官方自研搜索引擎）
+├── doubao_search/      Feedcoop 豆包搜索 API（web_search / global_search）
+├── dustls/             磁盘占用分析（dust 纯数据输出，LLM 友好）
+├── exif/               图片 EXIF 工具（读取 / 移除 GPS / 移除全部 / 写入 / 备注）
+├── mail/               多邮箱通用工具（列收件箱 / 读邮件 / 发邮件 / 查未读）
+├── news/               查询 MySQL 新闻库：早报 / 晚报 / 热榜与关键词检索
+├── nga/                NGA 论坛浏览（分类 / 帖子 / 回复 / 搜索 / 登录）
+├── ov/                 OpenViking 外置记忆统一入口（搜索 / 写入 / 读取 / 遗忘）
+├── s1/                 Stage1st 论坛浏览（版块 / 帖子 / 回复 / 登录）
+├── script/             脚本/代码增删改查 + 结构骨架
+├── tplink_ptz/         TP-Link 摄像头 PTZ 云台控制
+├── volc_balance/       火山引擎账户余额查询
+├── wait/               等待指定秒数（最长 600 秒）
+├── weather/            wttr.in 天气查询（默认武汉）
+└── zhipu_balance/      智谱 BigModel 账户余额查询
 ```
+
+> 每个技能文件夹内含入口脚本 `skill.py`、可选的配置模板与 `_` 前缀助手模块；
+> 各技能参数与依赖以 `index.json` 为准。
 
 ## 技能文件夹约定
 
