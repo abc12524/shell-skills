@@ -1,0 +1,16 @@
+# TP-Link 摄像头 PTZ 云台控制配置模板
+# 复制为同目录 tplink.conf 后按实际摄像头填写（真实配置含密码，不入库）
+
+[general]
+timeout = 8
+# 方向转动默认速度 (0~1) 与默认时长(秒)
+default_speed = 0.6
+default_duration = 2.0
+
+# 每个 [节名] 是一台摄像头；name 为别名（可被 arguments.camera 匹配）
+[camera1]
+name = 楼梯
+ip = 192.168.1.10
+port = 80
+username = admin
+password = your-camera-password

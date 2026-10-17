@@ -21,12 +21,19 @@ shell-skills/
 ├── doubao_search/
 │   ├── skill.py
 │   └── config.example.json
+├── dustls/
+│   └── skill.py               # 包装外部 dust 可执行文件
 ├── news/
 │   ├── skill.py
 │   └── config.example.json
-└── script/
-    ├── skill.py
-    └── _script_impl.py        # 助手模块（`_` 开头，不注册为技能）
+├── script/
+│   ├── skill.py
+│   └── _script_impl.py        # 助手模块（`_` 开头，不注册为技能）
+├── tplink_ptz/
+│   ├── skill.py
+│   └── tplink.conf.example    # 多摄像头 ini 配置模板（真实 tplink.conf 不入库）
+└── wait/
+    └── skill.py
 ```
 
 ## 技能文件夹约定
@@ -51,6 +58,8 @@ shell-skills/
   { "BAIDU_QIANFAN_KEY": "sk-..." }
   ```
   仓库只提交 `config.example.json`；真实 `config.json` 由安装时生成并写入 `.gitignore`。
+  需要结构化/多实例配置的技能（如 `tplink_ptz` 的多摄像头）改用同目录 ini 文件，
+  提交 `*.conf.example` 模板、真实配置文件同样写入 `.gitignore`。
 
 ## 信封导入（跨运行时兼容）
 

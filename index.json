@@ -35,6 +35,16 @@
       "config": ["FEEDCOOP_API_KEY"]
     },
     {
+      "name": "dustls",
+      "description": "磁盘占用分析（dust 的纯数据输出：整数字节 + 全路径，LLM 友好）",
+      "platform": ["linux", "windows"],
+      "path": "dustls",
+      "entry": "skill.py",
+      "version": "1.0.0",
+      "requires": [],
+      "config": []
+    },
+    {
       "name": "news",
       "description": "查询 MySQL 新闻库：早报/晚报/热榜（今日）与关键词检索",
       "platform": ["linux", "windows", "android", "ios"],
@@ -49,6 +59,26 @@
       "description": "脚本/代码增删改查（CRUD）+ 结构骨架（改代码首选）",
       "platform": ["linux", "windows", "android", "ios"],
       "path": "script",
+      "entry": "skill.py",
+      "version": "1.0.0",
+      "requires": [],
+      "config": []
+    },
+    {
+      "name": "tplink_ptz",
+      "description": "TP-Link 摄像头 PTZ 云台控制（列表 / 状态 / 方向转动 / 定位 / 预置点）",
+      "platform": ["linux", "windows", "android", "ios"],
+      "path": "tplink_ptz",
+      "entry": "skill.py",
+      "version": "1.0.0",
+      "requires": ["requests"],
+      "config": []
+    },
+    {
+      "name": "wait",
+      "description": "等待指定秒数（阻塞），最长 10 分钟（600 秒）",
+      "platform": ["linux", "windows", "android", "ios"],
+      "path": "wait",
       "entry": "skill.py",
       "version": "1.0.0",
       "requires": [],

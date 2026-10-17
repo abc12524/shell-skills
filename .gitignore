@@ -1,6 +1,8 @@
-# 真实配置（含密钥）不入库，仅提交 config.example.json
+# 真实配置（含密钥）不入库，仅提交 config.example.json / *.conf.example
 config.json
 **/config.json
+tplink.conf
+**/tplink.conf
 
 __pycache__/
 *.pyc
