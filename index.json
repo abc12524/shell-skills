@@ -45,6 +45,16 @@
       "config": []
     },
     {
+      "name": "exif",
+      "description": "图片 EXIF 工具（piexif）：读取信息 / 移除 GPS / 移除全部 EXIF / 写入信息 / 添加用户备注",
+      "platform": ["linux", "windows", "android", "ios"],
+      "path": "exif",
+      "entry": "skill.py",
+      "version": "1.0.0",
+      "requires": ["piexif"],
+      "config": []
+    },
+    {
       "name": "mail",
       "description": "多邮箱通用工具（163/126/yeah/qq/gmail/outlook）：列收件箱 / 读邮件 / 发邮件 / 查未读",
       "platform": ["linux", "windows", "android", "ios"],

@@ -23,6 +23,8 @@ shell-skills/
 │   └── config.example.json
 ├── dustls/
 │   └── skill.py               # 包装外部 dust 可执行文件
+├── exif/
+│   └── skill.py               # 图片 EXIF 工具（读取/移除 GPS/移除全部/写入/备注），依赖 piexif
 ├── mail/
 │   ├── skill.py               # 多邮箱通用工具（列表/读取/发送/未读）
 │   └── config.example.json    # 账号/授权码模板（真实 config.json 不入库）
