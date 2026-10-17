@@ -3,7 +3,7 @@
 # usage:
 #   arguments.location = 地点名，如 Wuhan（默认）/ Beijing / "New York"
 #   arguments.days     = 0 | 3 ，默认 0
-#                        0=当天；3=当天+未来两天；7=当天+未来六天（wttr.in 实际只提供 3 天）
+#                        0=当天；3=当天+未来两天（wttr.in 实际只提供 3 天）
 #   arguments.format   = markdown | text | json，默认 markdown
 #                        markdown=带表格的中文日报；text=一行摘要；json=结构化数据（不含渲染）
 #   arguments.output   = 可选，把 markdown / text 结果写入指定文件，如 /tmp/weather.md
@@ -38,7 +38,7 @@ except ImportError:  # shell-tool：使用 core.tools.envelope
 
 WTTR_URL = "https://wttr.in/{location}?format=j1&lang=zh"
 DEFAULT_LOCATION = "Wuhan"
-VALID_DAYS = (0, 3, 7)
+VALID_DAYS = (0, 3)
 FORMATS = ("markdown", "text", "json")
 TIMEOUT = 15
 WEEKDAYS_CN = ("周一", "周二", "周三", "周四", "周五", "周六", "周日")
@@ -114,7 +114,7 @@ def place_name(data, location):
 
 
 def pick_days(data, days):
-    """按 days 选择要展示的日期：0=当天；3=当天+未来两天；7=当天+未来六天（受数据长度限制）。"""
+    """按 days 选择要展示的日期：0=当天；3=当天+未来两天（受 wttr.in 数据长度限制）。"""
     weather_days = data.get("weather") or []
     if not weather_days:
         raise WeatherError("未获取到天气数据。", code="bad_response")
@@ -266,9 +266,9 @@ def run(arguments):
     try:
         days = int(raw_days)
     except (TypeError, ValueError):
-        return error(f"arguments.days 必须是整数（0/3/7），收到 {raw_days!r}", code="bad_request")
+        return error(f"arguments.days 必须是整数（0/3），收到 {raw_days!r}", code="bad_request")
     if days not in VALID_DAYS:
-        return error(f"arguments.days 只能是 0 / 3 / 7，收到 {days}", code="bad_request")
+        return error(f"arguments.days 只能是 0 / 3，收到 {days}", code="bad_request")
 
     fmt = str(a.get("format") or "markdown").strip().lower()
     if fmt not in FORMATS:
@@ -327,7 +327,7 @@ def parse_args():
     p.add_argument("-l", "--location", help="地点名称，如 Wuhan（默认）/ Beijing / 'New York'")
     p.add_argument(
         "-d", "--days", type=int, choices=list(VALID_DAYS), default=0,
-        help="查询天数: 0=当天, 3=未来三天, 7=未来七天 (默认 0)"
+        help="查询天数: 0=当天, 3=未来三天 (默认 0)"
     )
     p.add_argument("-f", "--format", choices=list(FORMATS), default="markdown", help="输出格式")
     p.add_argument("-o", "--output", help="输出到指定文件，省略则打印到终端")
