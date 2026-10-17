@@ -4,14 +4,14 @@
 # usage:
 #   arguments.action = read | remove_gps | remove_all | write | comment
 #   arguments.path / arguments.paths = 单文件 / 多文件路径
-#   read       : 读 EXIF（arguments.ifd 可选 0th/Exif/GPS/1st/Interop）
+#   read       : 读 EXIF（arguments.ifd 可选 0th/Exif/GPS/1st/Interop）；空标签省略，无 EXIF 返回 message
 #   remove_gps : 移除 GPS（多文件）
 #   remove_all : 移除全部 EXIF（多文件）
 #   write      : 写入 arguments.info = {标签名: 值}
 #   comment    : 写备注 arguments.comment = "文本"（Exif.UserComment）
 #   保存       : 默认原地写回；arguments.output（单文件=路径，多文件=目录）
 #                或 arguments.suffix（就近另存「原名<后缀>.jpg」）则另存新文件
-#   标签见 result.tags；常用: Make/Model/Artist/Copyright/DateTime/ImageDescription/
+#   常用标签: Make/Model/Artist/Copyright/DateTime/ImageDescription/
 #   Orientation/DateTimeOriginal/UserComment/ExposureTime/FNumber/ISOSpeedRatings/
 #   FocalLength/LensModel/GPSLatitude/GPSLongitude/GPSAltitude 等
 #   示例: {"action":"read","path":"./a.jpg"}
@@ -280,6 +280,17 @@ def _norm_value(kind, value):
     return value
 
 
+def _is_blank(value):
+    """空内容判定：None / 空字符串 / 空列表 / 空字典 视为无内容。"""
+    if value is None:
+        return True
+    if isinstance(value, str):
+        return not value.strip()
+    if isinstance(value, (list, tuple, dict)):
+        return len(value) == 0
+    return False
+
+
 def _read_ifds(exif_dict, only=None):
     want = [only] if only else list(IFD_KEYS)
     out = {}
@@ -294,17 +305,13 @@ def _read_ifds(exif_dict, only=None):
             name = names.get(tag_id, "Tag_0x%04x" % tag_id)
             spec = NAME2SPEC.get(name.lower())
             kind = spec[2] if spec else None
-            block[name] = _norm_value(kind, raw)
+            value = _norm_value(kind, raw)
+            if _is_blank(value):  # 有内容才输出
+                continue
+            block[name] = value
         if block:
             out[ifd] = block
     return out
-
-
-def _has_exif(exif_dict):
-    """是否含 EXIF：按原始数据判断（含缩略图），不受展示层过滤指针标签的影响。"""
-    if exif_dict.get("thumbnail"):
-        return True
-    return any(exif_dict.get(ifd) for ifd in IFD_KEYS)
 
 
 def _gps_block(exif_dict):
@@ -389,14 +396,18 @@ def _do_read(paths, a):
             errors.append({"path": src, "error": f"{type(exc).__name__}: {exc}"})
             continue
         ifds = _read_ifds(exif_dict, ifd_filter)
-        item = {"path": src, "has_exif": _has_exif(exif_dict), "ifds": ifds}
         gps = _gps_block(exif_dict)
-        if gps:
-            item["gps"] = gps
+        item = {"path": src}
+        if ifds or gps:  # 有内容才输出，空标签/空 IFD 已在 _read_ifds 内剔除
+            if ifds:
+                item["ifds"] = ifds
+            if gps:
+                item["gps"] = gps
+        else:
+            item["message"] = "无 EXIF 信息"
         items.append(item)
 
-    result = {"action": "read", "count": len(items), "items": items,
-              "tags": sorted(NAME2SPEC[k][3] for k in NAME2SPEC)}
+    result = {"action": "read", "count": len(items), "items": items}
     if errors:
         result["errors"] = errors
     return ok(result)
