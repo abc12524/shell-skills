@@ -62,7 +62,7 @@
       "entry": "skill.py",
       "version": "1.0.0",
       "requires": ["requests"],
-      "config": ["OPENVIKING_URL", "OPENVIKING_KEY", "OPENVIKING_USER", "OPENVIKING_AGENT"]
+      "config": ["OPENVIKING_URL", "OPENVIKING_KEY", "OPENVIKING_USER", "OPENVIKING_AGENT", "OV_SEARCH_THRESHOLD", "OV_SEARCH_LIMIT", "OV_FIND_THRESHOLD", "OV_FIND_LIMIT"]
     },
     {
       "name": "script",

@@ -17,6 +17,9 @@
 #     commit_session  提交/归档 Session    {session_id, keep_recent_count?}
 #     get_session     获取 Session 详情    {session_id}
 #     list_sessions   列出所有 Session     {}
+#   默认: search/find 的 score_threshold 与 limit 省略时读配置（env 或同目录 config.json）：
+#         OV_SEARCH_THRESHOLD(0.4) / OV_SEARCH_LIMIT(3) / OV_FIND_THRESHOLD(0.4) / OV_FIND_LIMIT(3)；
+#         调用时可显式传参覆盖。
 #   说明: read/write_file/forget 支持只传 name（文件名或片段），程序用服务端
 #         /api/v1/search/glob 解析出完整 viking:// uri，无需手写完整路径。
 #         解析默认依次探测 peer 记忆 → 用户级记忆 → 公共资源库(resources)；
