@@ -103,7 +103,6 @@ def _act_now(a):
         "utc": datetime.now(timezone.utc).strftime(fmt),
         "iso": target.isoformat(),
         "tz": str(tz) if tz is not None else str(now_local.tzinfo),
-        "format": fmt,
     })
 
 
@@ -135,7 +134,6 @@ def _act_to_date(a):
         "utc": dt_utc.strftime(fmt),
         "tz": str(tz) if tz is not None else str(dt.tzinfo),
         "weekday": dt.strftime("%A"),
-        "format": fmt,
     })
 
 

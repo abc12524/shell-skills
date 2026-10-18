@@ -130,7 +130,7 @@
       "platform": ["linux", "windows", "android", "ios"],
       "path": "timestamp",
       "entry": "skill.py",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "requires": [],
       "config": []
     },
