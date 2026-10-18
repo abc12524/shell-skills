@@ -50,7 +50,7 @@
       "platform": ["linux", "windows"],
       "path": "dustls",
       "entry": "skill.py",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "requires": [],
       "config": []
     },

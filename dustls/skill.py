@@ -15,6 +15,7 @@
 #   示例: {"path": "/var/log", "top": 20}
 #         {"path": "/root", "tree": true, "depth": 2}
 #         {"json": true, "path": "/usr"}
+#         Windows: {"path": "C:\\\\Users", "top": 20}
 """dustls —— dust 的纯数据包装器（skill 实现，单文件）。
 
 去掉一切给人看的格式（进度条、百分比条、树形符号、列对齐填充、Mi/Gi 人类单位、
@@ -50,7 +51,8 @@ _BIN_UNITS = {"": 1, "K": 1024, "M": 1024 ** 2, "G": 1024 ** 3, "T": 1024 ** 4,
               "P": 1024 ** 5, "E": 1024 ** 6, "Z": 1024 ** 7, "Y": 1024 ** 8}
 
 _NOT_INSTALLED = ("dust 未安装（Debian/Ubuntu: apt install du-dust；"
-                  "macOS: brew install dust；Rust: cargo install du-dust）")
+                  "macOS: brew install dust；Windows: scoop install dust 或 winget install dust；"
+                  "Rust: cargo install du-dust）")
 
 
 def _dust_bin():
@@ -111,7 +113,8 @@ def _load_dust(binary, depth, extra):
     if depth is not None:
         cmd += ["-d", str(depth)]
     cmd += extra
-    proc = subprocess.run(cmd, capture_output=True, text=True)
+    # 固定 UTF-8 解码：dust 恒输出 UTF-8，Windows 中文环境下 text=True 会按 GBK 解码非 ASCII 路径而崩溃
+    proc = subprocess.run(cmd, capture_output=True, encoding="utf-8", errors="replace")
     out, err = proc.stdout, proc.stderr or ""
     first = (err.strip().splitlines() or [""])[0]
     if "No such file or directory" in first or "Permission denied" in first:
