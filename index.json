@@ -125,6 +125,16 @@
       "config": []
     },
     {
+      "name": "timestamp",
+      "description": "时间戳转换（当前时间 / 时间戳转日期 / 日期转时间戳，支持时区与自定义格式）",
+      "platform": ["linux", "windows", "android", "ios"],
+      "path": "timestamp",
+      "entry": "skill.py",
+      "version": "1.0.0",
+      "requires": [],
+      "config": []
+    },
+    {
       "name": "tplink_ptz",
       "description": "TP-Link 摄像头 PTZ 云台控制（列表 / 状态 / 方向转动 / 定位 / 预置点）",
       "platform": ["linux", "windows", "android", "ios"],
