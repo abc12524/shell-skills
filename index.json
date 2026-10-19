@@ -95,6 +95,16 @@
       "config": ["NGA_DOMAIN", "NGA_COOKIE", "NGA_INSECURE", "NGA_COOKIE_FILE"]
     },
     {
+      "name": "objstore",
+      "description": "对象存储（S3 兼容）：上传 / 下载 / 删除 / 列表 / 复制 / 元数据 / bucket / 文件夹 / 预签名",
+      "platform": ["linux", "windows", "android", "ios"],
+      "path": "objstore",
+      "entry": "skill.py",
+      "version": "1.0.0",
+      "requires": ["requests"],
+      "config": ["S3_ENDPOINT_URL", "S3_ACCESS_KEY", "S3_SECRET_KEY", "S3_REGION"]
+    },
+    {
       "name": "ov",
       "description": "OpenViking 外置记忆统一入口（语义搜索 / 写入 / 读取 / 目录 / 遗忘 / Session）",
       "platform": ["linux", "windows", "android", "ios"],
