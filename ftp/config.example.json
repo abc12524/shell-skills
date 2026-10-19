@@ -1,0 +1,8 @@
+{
+  "FTP_HOST": "192.168.1.10",
+  "FTP_PORT": "21",
+  "FTP_USERNAME": "user",
+  "FTP_PASSWORD": "pass",
+  "FTP_SECURE": "false",
+  "FTP_ENCODING": "utf-8"
+}
