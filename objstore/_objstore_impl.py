@@ -14,6 +14,7 @@ create_bucket / delete_bucket / presign / create_folder / delete_folder。
 内部统一使用 dict 信封：{"status":"ok","result":...} / {"status":"error","error":...,"code":...}；
 对外由入口 skill.py 调 _emit() 转成运行时原生信封（shell-tool=JSON 字符串 / 移动端=dict）。
 """
+import base64
 import hashlib
 import hmac
 import json
@@ -164,6 +165,36 @@ def _timeout(args):
     return value if value > 0 else DEFAULT_TIMEOUT
 
 
+# ============================ HTTPS 校验 ============================
+TLS_VERIFY_MODES = ("verify", "none")
+
+
+def _tls_verify(args):
+    """解析 HTTPS 校验参数，返回传给 requests 的 verify 值。
+
+    优先级：arguments.verify / ca_bundle > 环境变量 S3_VERIFY / S3_CA_BUNDLE > 默认严格校验。
+    - verify（默认）：用 certifi 证书库严格校验，适合公网 CA 签发的证书；
+    - none：跳过校验，适合自签名或直接用内网 IP 访问；
+    - ca_bundle：指定 CA 证书或服务端证书文件路径，仍做完整校验。
+    仅对 https 端点生效，http 端点由 requests 忽略该参数。
+    """
+    mode = str(args.get("verify") or os.environ.get("S3_VERIFY") or "verify").strip().lower()
+    ca_bundle = str(args.get("ca_bundle") or os.environ.get("S3_CA_BUNDLE") or "").strip()
+
+    if ca_bundle:
+        if not os.path.isfile(ca_bundle):
+            raise ObjStoreError("ca_bundle 文件不存在: %s" % ca_bundle, code="bad_request")
+        return ca_bundle
+
+    if mode not in TLS_VERIFY_MODES:
+        raise ObjStoreError(
+            "arguments.verify 只能是 %s，收到 '%s'"
+            % (" / ".join(TLS_VERIFY_MODES), args.get("verify")),
+            code="bad_request",
+        )
+    return mode != "none"
+
+
 # ============================ AWS Signature V4 ============================
 def _sha256_hex(data):
     return hashlib.sha256(data).hexdigest()
@@ -251,10 +282,68 @@ def _sign(method, endpoint, path, query_params, region, ak, sk, headers, payload
     return signed, canon_path, canon_query
 
 
+# AWS Signature V2 中需要并入 CanonicalizedResource 的子资源
+_V2_SUBRESOURCES = frozenset({
+    "acl", "cors", "delete", "lifecycle", "location", "logging", "notification",
+    "partnumber", "policy", "requestpayment", "tagging", "torrent", "uploadid",
+    "uploads", "versionid", "versioning", "versions", "website",
+})
+
+
+SIGN_VERSIONS = ("v4", "v2")
+
+
+def _sign_version(endpoint, args=None):
+    """解析签名版本：arguments.sign_version / 环境变量 S3_SIGN_VERSION > 默认 v4。
+
+    默认 v4（标准 S3 兼容服务）；对仅实现 V2 的兼容服务可显式指定 v2，
+    未指定时也会在 V4 返回 SignatureDoesNotMatch 时自动降级重试 V2。
+    """
+    args = args or {}
+    value = str(args.get("sign_version") or os.environ.get("S3_SIGN_VERSION") or "v4").strip().lower()
+    if value not in SIGN_VERSIONS:
+        raise ObjStoreError(
+            "arguments.sign_version 只能是 %s，收到 '%s'" % (" / ".join(SIGN_VERSIONS), value),
+            code="bad_request",
+        )
+    return value
+
+
+def _sign_v2(method, endpoint, path, query_params, ak, sk, headers, payload_hash, now=None):
+    """生成 AWS Signature V2 头，用于对 V4 实现不完整的 S3 兼容服务。
+
+    StringToSign = METHOD\nContent-MD5\nContent-Type\nDate\n + CanonicalizedAmzHeaders + CanonicalizedResource
+    """
+    now = now or datetime.now(timezone.utc)
+    date_str = now.strftime("%a, %d %b %Y %H:%M:%S GMT")
+    signed = dict(headers)
+    signed["Date"] = date_str
+
+    amz_headers = {k.lower(): str(v).strip() for k, v in signed.items() if k.lower().startswith("x-amz-")}
+    canon_amz = "".join("%s:%s\n" % (k, amz_headers[k]) for k in sorted(amz_headers))
+
+    canon_path = _canonical_path(path)
+    # V2 只把子资源参数计入 CanonicalizedResource
+    subs = sorted(k for k in (query_params or {}) if str(k).lower() in _V2_SUBRESOURCES)
+    canon_query = "&".join("%s=%s" % (k, _canonical_encode(query_params[k])) for k in subs)
+    resource = canon_path + (("?" + canon_query) if canon_query else "")
+
+    string_to_sign = "\n".join([
+        method, signed.get("Content-MD5", ""), signed.get("Content-Type", ""), date_str,
+    ]) + "\n" + canon_amz + resource
+
+    digest = hmac.new(sk.encode("utf-8"), string_to_sign.encode("utf-8"), hashlib.sha1).digest()
+    signed["Authorization"] = "AWS %s:%s" % (ak, base64.b64encode(digest).decode("ascii"))
+    return signed, canon_path, canon_query
+
+
 def _request(endpoint, region, ak, sk, method, path, *, query=None, headers=None,
              data=None, data_stream=None, payload_hash=None, content_type=None,
-             timeout=DEFAULT_TIMEOUT, stream=False):
-    """签名并发送一次 S3 请求，返回 requests.Response。"""
+             timeout=DEFAULT_TIMEOUT, stream=False, verify=True, sign_version=None):
+    """签名并发送一次 S3 请求，返回 requests.Response。
+
+    verify 透传给 requests：True 严格校验 / False 跳过 / 证书文件路径（自定义 CA）。
+    """
     query = dict(query or {})
     headers = dict(headers or {})
     if content_type:
@@ -265,14 +354,30 @@ def _request(endpoint, region, ak, sk, method, path, *, query=None, headers=None
     elif payload_hash is None:
         payload_hash = _sha256_hex(data if data is not None else b"")
 
-    signed, canon_path, canon_query = _sign(
-        method, endpoint, path, query, region, ak, sk, headers, payload_hash
-    )
-    send_headers = {k: v for k, v in signed.items() if k.lower() != "host"}
-    url = endpoint + canon_path + (("?" + canon_query) if canon_query else "")
-    body = data_stream if data_stream is not None else data
-    return requests.request(method, url, headers=send_headers, data=body,
-                            timeout=timeout, stream=stream)
+    version = (sign_version or os.environ.get("S3_SIGN_VERSION") or "v4").strip().lower()
+    if version not in SIGN_VERSIONS:
+        version = "v4"
+
+    def _send(ver):
+        if ver == "v2":
+            signed, cp, cq = _sign_v2(method, endpoint, path, query, ak, sk, headers, payload_hash)
+        else:
+            signed, cp, cq = _sign(method, endpoint, path, query, region, ak, sk, headers, payload_hash)
+        sh_ = {k: v for k, v in signed.items() if k.lower() != "host"}
+        url_ = endpoint + cp + (("?" + cq) if cq else "")
+        body_ = data_stream if data_stream is not None else data
+        return requests.request(method, url_, headers=sh_, data=body_,
+                                timeout=timeout, stream=stream, verify=verify)
+
+    resp = _send(version)
+    # V4 被拒且服务端不支持时，自动降级到 V2 重试一次（仅限签名不匹配）
+    if version != "v2" and resp.status_code in (400, 403) and b"SignatureDoesNotMatch" in resp.content[:400]:
+        try:
+            resp.close()
+        except Exception:
+            pass
+        resp = _send("v2")
+    return resp
 
 
 # ============================ XML 解析 ============================
@@ -355,7 +460,7 @@ def action_upload(args):
     with open(local_path, "rb") as f:
         resp = _request(endpoint, region, ak, sk, "PUT", _join(p["bucket"], p["key"]),
                         data_stream=f, payload_hash=payload_hash, content_type=content_type,
-                        timeout=timeout)
+                        timeout=_timeout(args), verify=_tls_verify(args))
     if resp.status_code not in (200, 201):
         return _error("上传失败: %s" % _s3_error(resp), code="upload_failed")
     return _ok({
@@ -372,7 +477,7 @@ def action_download(args):
     local_path = p["local_path"]
 
     resp = _request(endpoint, region, ak, sk, "GET", _join(p["bucket"], p["key"]),
-                    timeout=timeout, stream=True)
+                    timeout=_timeout(args), stream=True, verify=_tls_verify(args))
     if resp.status_code != 200:
         message = _s3_error(resp)
         resp.close()
@@ -399,20 +504,20 @@ def action_delete(args):
     p = _require(args, "bucket", "key")
     endpoint, region, ak, sk = _conn(args)
     resp = _request(endpoint, region, ak, sk, "DELETE", _join(p["bucket"], p["key"]),
-                    timeout=_timeout(args))
+                    timeout=_timeout(args), verify=_tls_verify(args))
     if resp.status_code in (200, 204):
         return _ok({"bucket": p["bucket"], "key": p["key"],
                     "message": "已删除: s3://%s/%s" % (p["bucket"], p["key"])})
     return _error("删除失败: %s" % _s3_error(resp), code="delete_failed")
 
 
-def _delete_keys(endpoint, region, ak, sk, bucket, keys, timeout):
+def _delete_keys(endpoint, region, ak, sk, bucket, keys, timeout, verify=True):
     xml_body = "<Delete>" + "".join(
         "<Object><Key>%s</Key></Object>" % _xml_escape(k) for k in keys
     ) + "</Delete>"
     resp = _request(endpoint, region, ak, sk, "POST", _join(bucket, None),
                     query={"delete": ""}, data=xml_body.encode("utf-8"),
-                    content_type="application/xml", timeout=timeout)
+                    content_type="application/xml", timeout=timeout, verify=verify)
     return resp
 
 
@@ -427,7 +532,7 @@ def action_delete_batch(args):
 
     deleted = 0
     for batch in [keys[i:i + BATCH_SIZE] for i in range(0, len(keys), BATCH_SIZE)]:
-        resp = _delete_keys(endpoint, region, ak, sk, p["bucket"], batch, timeout)
+        resp = _delete_keys(endpoint, region, ak, sk, p["bucket"], batch, _timeout(args), _tls_verify(args))
         if resp.status_code not in (200, 204):
             return _error("批量删除失败: %s" % _s3_error(resp), code="delete_failed")
         deleted += len(batch)
@@ -436,7 +541,7 @@ def action_delete_batch(args):
 
 
 def _list_page(endpoint, region, ak, sk, bucket, prefix, max_keys,
-               continuation_token, delimiter, timeout):
+               continuation_token, delimiter, timeout, verify=True):
     query = {"list-type": "2", "max-keys": str(max_keys)}
     if prefix:
         query["prefix"] = prefix
@@ -445,7 +550,7 @@ def _list_page(endpoint, region, ak, sk, bucket, prefix, max_keys,
     if delimiter:
         query["delimiter"] = delimiter
     return _request(endpoint, region, ak, sk, "GET", _join(bucket, None),
-                    query=query, timeout=timeout)
+                    query=query, timeout=timeout, verify=verify)
 
 
 def _parse_list(xml_bytes):
@@ -479,7 +584,8 @@ def action_list(args):
         return _error("arguments.max_keys 必须是整数", code="bad_request")
 
     resp = _list_page(endpoint, region, ak, sk, p["bucket"], prefix, max_keys,
-                      str(args.get("continuation_token", "") or ""), delimiter, timeout)
+                      str(args.get("continuation_token", "") or ""), delimiter, _timeout(args),
+                      _tls_verify(args))
     if resp.status_code != 200:
         return _error("列举失败: %s" % _s3_error(resp), code="list_failed")
 
@@ -495,11 +601,12 @@ def action_list(args):
     return _ok(result)
 
 
-def _list_all_keys(endpoint, region, ak, sk, bucket, prefix, timeout):
+def _list_all_keys(endpoint, region, ak, sk, bucket, prefix, timeout, verify=True):
     keys = []
     token = ""
     while True:
-        resp = _list_page(endpoint, region, ak, sk, bucket, prefix, BATCH_SIZE, token, "", timeout)
+        resp = _list_page(endpoint, region, ak, sk, bucket, prefix, BATCH_SIZE, token, "", timeout,
+                          verify)
         if resp.status_code != 200:
             raise ObjStoreError("列举失败: %s" % _s3_error(resp), code="list_failed")
         objects, _prefixes, truncated, token = _parse_list(resp.content)
@@ -516,7 +623,7 @@ def action_copy(args):
     source = quote("/%s/%s" % (source_bucket, p["source_key"]), safe="/")
     resp = _request(endpoint, region, ak, sk, "PUT", _join(p["bucket"], p["key"]),
                     headers={"x-amz-copy-source": source}, data=b"",
-                    content_type="application/octet-stream", timeout=_timeout(args))
+                    content_type="application/octet-stream", timeout=_timeout(args), verify=_tls_verify(args))
     if resp.status_code != 200:
         return _error("复制失败: %s" % _s3_error(resp), code="copy_failed")
     return _ok({"message": "已复制: s3://%s/%s -> s3://%s/%s"
@@ -527,7 +634,7 @@ def action_head(args):
     p = _require(args, "bucket", "key")
     endpoint, region, ak, sk = _conn(args)
     resp = _request(endpoint, region, ak, sk, "HEAD", _join(p["bucket"], p["key"]),
-                    timeout=_timeout(args))
+                    timeout=_timeout(args), verify=_tls_verify(args))
     if resp.status_code != 200:
         return _error("获取元数据失败: %s" % _s3_error(resp), code="head_failed")
     return _ok({
@@ -541,7 +648,7 @@ def action_head(args):
 
 def action_list_buckets(args):
     endpoint, region, ak, sk = _conn(args)
-    resp = _request(endpoint, region, ak, sk, "GET", "/", timeout=_timeout(args))
+    resp = _request(endpoint, region, ak, sk, "GET", "/", timeout=_timeout(args), verify=_tls_verify(args))
     if resp.status_code != 200:
         return _error("列举 bucket 失败: %s" % _s3_error(resp), code="list_failed")
 
@@ -559,7 +666,7 @@ def action_create_bucket(args):
     p = _require(args, "bucket")
     endpoint, region, ak, sk = _conn(args)
     resp = _request(endpoint, region, ak, sk, "PUT", _join(p["bucket"], None),
-                    data=b"", content_type="application/octet-stream", timeout=_timeout(args))
+                    data=b"", content_type="application/octet-stream", timeout=_timeout(args), verify=_tls_verify(args))
     if resp.status_code not in (200, 201):
         return _error("创建 bucket 失败: %s" % _s3_error(resp), code="create_bucket_failed")
     return _ok({"bucket": p["bucket"], "message": "已创建 bucket: %s" % p["bucket"]})
@@ -569,7 +676,7 @@ def action_delete_bucket(args):
     p = _require(args, "bucket")
     endpoint, region, ak, sk = _conn(args)
     resp = _request(endpoint, region, ak, sk, "DELETE", _join(p["bucket"], None),
-                    timeout=_timeout(args))
+                    timeout=_timeout(args), verify=_tls_verify(args))
     if resp.status_code in (200, 204):
         return _ok({"bucket": p["bucket"], "message": "已删除 bucket: %s" % p["bucket"]})
     return _error("删除 bucket 失败: %s" % _s3_error(resp), code="delete_bucket_failed")
@@ -624,7 +731,7 @@ def action_create_folder(args):
     endpoint, region, ak, sk = _conn(args)
     folder_key = p["folder"].strip("/") + "/"
     resp = _request(endpoint, region, ak, sk, "PUT", _join(p["bucket"], folder_key),
-                    data=b"", content_type="application/octet-stream", timeout=_timeout(args))
+                    data=b"", content_type="application/octet-stream", timeout=_timeout(args), verify=_tls_verify(args))
     if resp.status_code not in (200, 201):
         return _error("创建文件夹失败: %s" % _s3_error(resp), code="create_folder_failed")
     return _ok({"bucket": p["bucket"], "folder": folder_key,
@@ -636,13 +743,13 @@ def action_delete_folder(args):
     endpoint, region, ak, sk = _conn(args)
     timeout = _timeout(args)
     prefix = p["folder"].strip("/") + "/"
-    keys = _list_all_keys(endpoint, region, ak, sk, p["bucket"], prefix, timeout)
+    keys = _list_all_keys(endpoint, region, ak, sk, p["bucket"], prefix, _timeout(args), _tls_verify(args))
     if not keys:
         return _ok({"bucket": p["bucket"], "folder": prefix, "deleted": 0,
                     "message": "文件夹为空，无需删除: s3://%s/%s" % (p["bucket"], prefix)})
 
     for batch in [keys[i:i + BATCH_SIZE] for i in range(0, len(keys), BATCH_SIZE)]:
-        resp = _delete_keys(endpoint, region, ak, sk, p["bucket"], batch, timeout)
+        resp = _delete_keys(endpoint, region, ak, sk, p["bucket"], batch, _timeout(args), _tls_verify(args))
         if resp.status_code not in (200, 204):
             return _error("删除文件夹失败: %s" % _s3_error(resp), code="delete_failed")
     return _ok({"bucket": p["bucket"], "folder": prefix, "deleted": len(keys),
@@ -657,6 +764,12 @@ def _guard(fn):
             return fn(args)
         except ObjStoreError as e:
             return _error(str(e), code=e.code)
+        except requests.exceptions.SSLError as e:
+            return _error(
+                "HTTPS 证书校验失败: %s（自签名证书可传 verify=none，"
+                "或用 ca_bundle 指定 CA 证书文件）" % str(e)[:200],
+                code="ssl_error",
+            )
         except requests.RequestException as e:
             return _error("网络请求失败: %s" % e, code="network_error")
         except Exception as e:  # noqa: BLE001 —— 兜底，避免异常穿透到 runner
