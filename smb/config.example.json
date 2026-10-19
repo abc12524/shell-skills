@@ -1,0 +1,8 @@
+{
+  "SMB_HOST": "192.168.1.10",
+  "SMB_SHARE": "data",
+  "SMB_USERNAME": "user",
+  "SMB_PASSWORD": "pass",
+  "SMB_DOMAIN": "",
+  "SMB_PORT": "445"
+}

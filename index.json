@@ -145,6 +145,16 @@
       "config": []
     },
     {
+      "name": "smb",
+      "description": "SMB/CIFS 文件传输（系统 smbclient）：文件/文件夹上传、下载、删除、列表",
+      "platform": ["linux", "windows"],
+      "path": "smb",
+      "entry": "skill.py",
+      "version": "1.0.0",
+      "requires": [],
+      "config": ["SMB_HOST", "SMB_SHARE", "SMB_USERNAME", "SMB_PASSWORD", "SMB_DOMAIN", "SMB_PORT"]
+    },
+    {
       "name": "timestamp",
       "description": "时间戳转换（当前时间 / 时间戳转日期 / 日期转时间戳，支持时区与自定义格式）",
       "platform": ["linux", "windows", "android", "ios"],

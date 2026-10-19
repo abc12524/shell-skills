@@ -27,6 +27,7 @@ shell-skills/
 ├── s1/                 Stage1st 论坛浏览（版块 / 帖子 / 回复 / 登录）
 ├── script/             脚本/代码增删改查 + 结构骨架
 ├── skill_guide/        如何编写 skill：规范、要求与示例（内置 skill_README.md）
+├── smb/                SMB/CIFS 文件传输（系统 smbclient：上传 / 下载 / 删除 / 列表）
 ├── timestamp/          时间戳转换（当前时间 / 时间戳↔日期，支持时区与格式）
 ├── tplink_ptz/         TP-Link 摄像头 PTZ 云台控制
 ├── volc_balance/       火山引擎账户余额查询
