@@ -2,32 +2,14 @@
 # description: FTP/FTPS 文件传输（标准库 ftplib）：文件/文件夹上传、下载、删除、列表
 # status: enable
 # usage:
-#   arguments.action = upload | download | delete | list
-#     upload    上传文件/文件夹：local_path -> remote_path
-#     download  下载文件/文件夹：remote_path -> local_path
-#     delete    删除文件/文件夹：remote_path（删除非空目录需 recursive=true）
-#     list      列出目录：remote_path（默认登录根目录）
-#   连接参数（也可用同目录 config.json / 环境变量 FTP_* 提供）：
-#     arguments.host     主机名或 IP（必填）
-#     arguments.port     端口（默认 21）
-#     arguments.username 用户名（默认 anonymous）
-#     arguments.password 密码（默认 anonymous@）
-#     arguments.secure   true 使用 FTPS 显式 TLS（AUTH TLS + PBSZ/PROT），默认 false
-#     arguments.timeout  连接/读写超时秒数（默认 30）
-#     arguments.passive  true 被动模式（默认 true），false 为主动模式
-#     arguments.encoding 控制连接编码，默认 utf-8；中文文件名乱码的服务端可设 gbk
-#                        （解码失败时按替换字符处理，不会中断列举）
-#   路径参数：
-#     arguments.remote_path 服务器路径，用 / 分隔，如 "dir/file.txt"
-#     arguments.local_path  本机路径（绝对或相对当前目录）
-#     arguments.recursive   删除目录时是否递归（默认 false；upload/download 目录恒递归）
-#   说明: 纯标准库实现（ftplib），无需第三方依赖；已适配常见 FTP 服务端与 vsftpd
-#         （MLSD 列举 + LIST 解析回退，PASV 被动模式，路径用 / 分隔）。
-#         FTPS 为显式 TLS（AUTH TLS，端口通常 21），不支持隐式 TLS（端口 990）；
-#         对 vsftpd 的 FTPS 如遇会话复用报错，可在服务端设置 require_ssl_reuse=NO。
+#   arguments.action = upload | download | delete | list（默认 list）
+#     upload / download  文件或文件夹（文件夹递归）；delete 非空目录需 recursive=true
+#   arguments.host / port(21) / username / password
+#   arguments.secure(true=FTPS 显式 TLS) / passive(默认 true) / timeout(30) / encoding(默认 utf-8，可 gbk)
+#   arguments.remote_path 用 / 分隔；arguments.local_path 本机路径
+#   说明: 纯标准库 ftplib，兼容 vsftpd；配置见同目录 config.json（FTP_* / FTP_ENCODING）
 #   示例: {"action": "list", "host": "192.168.1.10", "username": "u", "password": "p"}
 #         {"action": "upload", "local_path": "./a.txt", "remote_path": "docs/a.txt", ...}
-#         {"action": "download", "remote_path": "docs", "local_path": "./dst", ...}
 #         {"action": "delete", "remote_path": "docs", "recursive": true, ...}
 import ftplib
 import json

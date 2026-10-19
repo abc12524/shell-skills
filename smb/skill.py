@@ -2,28 +2,14 @@
 # description: SMB/CIFS 文件传输（纯 Python smbprotocol）：文件/文件夹上传、下载、删除、列表
 # status: enable
 # usage:
-#   arguments.action = upload | download | delete | list
-#     upload    上传文件/文件夹：local_path -> remote_path
-#     download  下载文件/文件夹：remote_path -> local_path
-#     delete    删除文件/文件夹：remote_path（删除非空目录需 recursive=true）
-#     list      列出目录：remote_path（默认共享根）
-#   连接参数（也可用同目录 config.json / 环境变量 SMB_* 提供）：
-#     arguments.host     主机名或 IP（必填）
-#     arguments.share    共享名（必填）
-#     arguments.username 用户名（可写 domain\\user / user@domain；省略为匿名）
-#     arguments.password 密码（默认空）
-#     arguments.domain   域 / 工作组（可省略）
-#     arguments.port     端口（默认 445）
-#     arguments.timeout  连接超时秒数（默认 60）
-#   路径参数：
-#     arguments.remote_path 共享内路径，如 "dir/file.txt"（相对共享根）
-#     arguments.local_path  本机路径（绝对或相对当前目录）
-#     arguments.recursive   删除目录时是否递归（默认 false；upload/download 目录恒递归）
-#   说明: 依赖 smbprotocol（pip install smbprotocol），无需系统 smbclient；
-#         跨平台（Windows / Linux / macOS），支持 SMB 2.x / 3.x。
+#   arguments.action = upload | download | delete | list（默认 list）
+#     upload / download  文件或文件夹（文件夹递归）；delete 非空目录需 recursive=true
+#   arguments.host / share / username(可写 domain\\user) / password / domain / port(445) / timeout(60)
+#   arguments.remote_path 共享内路径；arguments.local_path 本机路径
+#   说明: 依赖 smbprotocol（pip install smbprotocol），无需系统 smbclient，支持 SMB 2.x / 3.x；
+#         配置见同目录 config.json（SMB_*）
 #   示例: {"action": "list", "host": "192.168.1.10", "share": "data", "username": "u", "password": "p"}
 #         {"action": "upload", "local_path": "./a.txt", "remote_path": "docs/a.txt", ...}
-#         {"action": "download", "remote_path": "docs", "local_path": "./dst", ...}
 #         {"action": "delete", "remote_path": "docs", "recursive": true, ...}
 import json
 import os
