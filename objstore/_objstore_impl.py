@@ -109,8 +109,10 @@ def _load_config():
         return
     if isinstance(cfg, dict):
         for key, value in cfg.items():
-            if value and not os.environ.get(key):
-                os.environ[key] = str(value)
+            # 下划线开头的键是说明性字段，不注入环境变量
+            if key.startswith("_") or not value or os.environ.get(key):
+                continue
+            os.environ[key] = str(value)
 
 
 _load_config()

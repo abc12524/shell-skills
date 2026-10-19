@@ -1,8 +1,6 @@
 {
   "HA_URL": "http://homeassistant.local:8123",
   "HA_TOKEN": "your-home-assistant-long-lived-token",
-
-  "_https_note": "以下三项仅在 https 访问时按需启用（http 可全部忽略）",
   "HA_VERIFY": "verify",
   "HA_CA_BUNDLE": "",
   "HA_CERT_FINGERPRINT": ""

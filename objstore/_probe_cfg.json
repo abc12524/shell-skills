@@ -1,0 +1,10 @@
+{
+  "S3_ENDPOINT_URL": "https://s3.example.com",
+  "S3_ACCESS_KEY": "your-access-key",
+  "S3_SECRET_KEY": "your-secret-key",
+  "S3_REGION": "us-east-1",
+
+  "_https_note": "自签名证书填 none，或用 S3_CA_BUNDLE 指定证书文件",
+  "S3_VERIFY": "verify",
+  "S3_CA_BUNDLE": ""
+}
