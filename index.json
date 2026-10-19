@@ -130,7 +130,7 @@
       "platform": ["linux", "windows", "android", "ios"],
       "path": "s1",
       "entry": "skill.py",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "requires": ["requests"],
       "config": ["S1_HOST", "S1_USERNAME", "S1_PASSWORD", "S1_COOKIE_FILE"]
     },

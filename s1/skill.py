@@ -1,27 +1,24 @@
 # skill: s1
-# description: Stage1st（S1 / Discuz!）论坛浏览：版块列表 / 帖子列表 / 帖子内容 / 登录 / 回复
+# description: Stage1st（S1）论坛浏览：版块 / 帖子列表 / 帖子内容 / 登录 / 回复
 # status: enable
 # usage:
-#   arguments.action = forums | threads | posts | login | reply（默认 forums）
-#     forums                      列出全部版块分类与版块
-#     threads  arguments.fid      列某版块帖子；可选 arguments.page / arguments.type
-#     posts    arguments.tid      看帖子内容；可选 arguments.page / arguments.last
-#     login    arguments.username / arguments.password（缺省读 S1_USERNAME / S1_PASSWORD）
-#     reply    arguments.tid / arguments.message（需登录，缺省用 S1_USERNAME / S1_PASSWORD 登录）
-#   示例: {"action": "forums"}
-#   示例: {"action": "threads", "fid": "4", "page": 1}
+#   action = forums（默认）| threads | posts | login | reply
+#   forums  无参数
+#   threads fid 必填；可选 page / type
+#   posts   tid 必填；可选 page / last（读最后 N 页）
+#   login   username / password（缺省用 S1_USERNAME / S1_PASSWORD）
+#   reply   tid / message（需登录）
+#   输出为 Markdown 文本（result.text）
 #   示例: {"action": "posts", "tid": "1234567", "last": 3}
-#   示例: {"action": "reply", "tid": "1234567", "message": "回复内容"}
-#   常用版块 fid: 归墟/外野=157  动漫论坛=6  ＰＣ数码=51
-#
-# 配置：账号/主机读取环境变量（同目录 config.json，模板见 config.example.json）。
-#   S1_USERNAME / S1_PASSWORD / S1_HOST / S1_COOKIE_FILE
-# 依赖：requests。
+#   常用 fid: 归墟/外野=157  动漫论坛=6  ＰＣ数码=51
+#   配置: S1_USERNAME / S1_PASSWORD / S1_HOST / S1_COOKIE_FILE；依赖 requests
 """Stage1st（S1）论坛浏览 skill。"""
 import json
 import os
 import re
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from typing import Optional
 
@@ -35,7 +32,9 @@ except ImportError:  # shell-tool：使用 core.tools.envelope
 DEFAULT_HOST = "stage1st.com"
 THREADS_PER_PAGE = 50
 POSTS_PER_PAGE = 40
-REQUEST_INTERVAL = 2.0
+REQUEST_INTERVAL = 1.0
+MAX_FETCH_WORKERS = 4
+REQUEST_TIMEOUT = 20
 DEFAULT_COOKIE_FILE = os.path.join(os.path.expanduser("~"), ".s1_cookies.json")
 
 
@@ -133,6 +132,8 @@ class S1Client:
         self._formhash = None
         self._logged_in = False
         self._last_request = 0.0
+        self._rate_lock = threading.Lock()
+        self._local = threading.local()
         self._load_cookies()
 
     @property
@@ -164,16 +165,35 @@ class S1Client:
             pass
 
     def _rate_limit(self):
-        elapsed = time.time() - self._last_request
-        if elapsed < REQUEST_INTERVAL:
-            time.sleep(REQUEST_INTERVAL - elapsed)
-        self._last_request = time.time()
+        with self._rate_lock:
+            elapsed = time.time() - self._last_request
+            if elapsed < REQUEST_INTERVAL:
+                time.sleep(REQUEST_INTERVAL - elapsed)
+            self._last_request = time.time()
+
+    def _get_variables(self, params):
+        self._rate_limit()
+        resp = self._thread_session().get(f"{self.api_url}/index.php", params=params,
+                                          timeout=REQUEST_TIMEOUT)
+        resp.raise_for_status()
+        return _parse_json(resp.text).get("Variables", {})
+
+    def _thread_session(self):
+        """每线程独立 Session（requests.Session 并发不安全），共享同一份 Cookie。"""
+        session = getattr(self._local, "session", None)
+        if session is None:
+            session = requests.Session()
+            session.headers.update(self.session.headers)
+            session.cookies.update(self.session.cookies)
+            self._local.session = session
+        return session
 
     # ── 登录 / 回复 ──
     def login(self, username, password):
         self._rate_limit()
         url = f"{self.api_url}/index.php?module=login&loginsubmit=yes&loginfield=auto&cookietime=2592000"
-        resp = self.session.post(url, data={"username": username, "password": password})
+        resp = self.session.post(url, data={"username": username, "password": password},
+                                 timeout=REQUEST_TIMEOUT)
         resp.raise_for_status()
         body = _parse_json(resp.text)
         if body.get("error"):
@@ -193,7 +213,8 @@ class S1Client:
     def _refresh_formhash(self):
         try:
             self._rate_limit()
-            resp = self.session.get(f"{self.api_url}/index.php?module=toplist")
+            resp = self.session.get(f"{self.api_url}/index.php?module=toplist",
+                                    timeout=REQUEST_TIMEOUT)
             resp.raise_for_status()
             formhash = _parse_json(resp.text).get("Variables", {}).get("formhash")
             if formhash:
@@ -206,7 +227,8 @@ class S1Client:
             raise S1Error("回复需要先登录")
         self._rate_limit()
         url = f"{self.api_url}/index.php?module=sendreply&replysubmit=yes"
-        resp = self.session.post(url, data={"formhash": self._formhash, "tid": tid, "message": message})
+        resp = self.session.post(url, data={"formhash": self._formhash, "tid": tid, "message": message},
+                                 timeout=REQUEST_TIMEOUT)
         resp.raise_for_status()
         body = _parse_json(resp.text)
         if body.get("error"):
@@ -216,7 +238,8 @@ class S1Client:
     # ── 版块 ──
     def get_forum_groups(self):
         self._rate_limit()
-        resp = self.session.get(f"{self.api_url}/index.php?module=forumindex")
+        resp = self.session.get(f"{self.api_url}/index.php?module=forumindex",
+                                timeout=REQUEST_TIMEOUT)
         resp.raise_for_status()
         variables = _parse_json(resp.text).get("Variables", {})
         cat_list = variables.get("catlist", []) or []
@@ -238,10 +261,7 @@ class S1Client:
                   "tpp": str(THREADS_PER_PAGE), "fid": fid, "page": str(page)}
         if type_id:
             params["typeid"] = type_id
-        self._rate_limit()
-        resp = self.session.get(f"{self.api_url}/index.php", params=params)
-        resp.raise_for_status()
-        variables = _parse_json(resp.text).get("Variables", {})
+        variables = self._get_variables(params)
         raw_threads = variables.get("forum_threadlist", []) or []
 
         types_node = variables.get("threadtypes", {}) or {}
@@ -261,15 +281,8 @@ class S1Client:
         return threads, page, total_pages, thread_types
 
     # ── 帖子内容 ──
-    def get_posts(self, tid, page=1, author_id=None):
-        params = {"module": "viewthread", "version": "4", "ppp": str(POSTS_PER_PAGE),
-                  "tid": tid, "page": str(page)}
-        if author_id:
-            params["authorid"] = author_id
-        self._rate_limit()
-        resp = self.session.get(f"{self.api_url}/index.php", params=params)
-        resp.raise_for_status()
-        variables = _parse_json(resp.text).get("Variables", {})
+    @staticmethod
+    def _parse_posts(variables, tid):
         raw_posts = variables.get("postlist", []) or []
 
         info_raw = variables.get("thread")
@@ -286,11 +299,51 @@ class S1Client:
             posts.append(Post(
                 pid=int(p.get("pid", 0)), author=p.get("author", ""), author_id=str(p.get("authorid", "")),
                 message=message, number=str(p.get("number", "")), is_first=p.get("first") == "1",
-                datetime=int(p.get("dbdateline", 0)),
+                datetime=int(p.get("dbdateline") or p.get("dateline") or 0),
                 is_op=(p.get("author") == op_author) if op_author else False))
         total_posts = (thread_info.replies + 1) if thread_info else 0
         total_pages = max(1, (total_posts + POSTS_PER_PAGE - 1) // POSTS_PER_PAGE)
+        return posts, total_pages, thread_info
+
+    def _post_params(self, tid, page, author_id=None):
+        params = {"module": "viewthread", "version": "4", "ppp": str(POSTS_PER_PAGE),
+                  "tid": tid, "page": str(page)}
+        if author_id:
+            params["authorid"] = author_id
+        return params
+
+    def get_posts(self, tid, page=1, author_id=None):
+        variables = self._get_variables(self._post_params(tid, page, author_id))
+        posts, total_pages, thread_info = self._parse_posts(variables, tid)
         return posts, page, total_pages, thread_info
+
+    def get_last_pages(self, tid, last, author_id=None):
+        """并发抓取帖子最后 last 页，返回 (posts, start_page, total_pages, thread_info)。
+
+        第一页用来拿到总页数（Discuz 的回复数在 thread 字段里）；其余页并行请求，
+        并发数受 MAX_FETCH_WORKERS 限制，请求间隔仍受 REQUEST_INTERVAL 约束。
+        首页已抓到时直接复用，不再重复请求。
+        """
+        first_posts, _, total_pages, thread_info = self.get_posts(tid, 1, author_id)
+        start = max(1, total_pages - last + 1)
+        batches = {1: first_posts}
+        pages = [p for p in range(start, total_pages + 1) if p != 1]
+
+        if pages:
+            def fetch(p):
+                variables = self._get_variables(self._post_params(tid, p, author_id))
+                return p, self._parse_posts(variables, tid)[0]
+
+            with ThreadPoolExecutor(max_workers=min(MAX_FETCH_WORKERS, len(pages))) as pool:
+                futures = [pool.submit(fetch, p) for p in pages]
+                for future in as_completed(futures):
+                    p, batch = future.result()
+                    batches[p] = batch
+
+        posts = []
+        for p in range(start, total_pages + 1):
+            posts.extend(batches.get(p, []))
+        return posts, start, total_pages, thread_info
 
 
 def _parse_json(text):
@@ -331,19 +384,28 @@ def _convert_reply_quotes(text):
 
 
 # ============= 命令 =============
+def _dedupe_posts(posts):
+    """按 pid 去重并保持原顺序（多页抓取时边界楼层可能重复）。"""
+    seen = set()
+    unique = []
+    for p in posts:
+        if p.pid and p.pid in seen:
+            continue
+        if p.pid:
+            seen.add(p.pid)
+        unique.append(p)
+    return unique
+
+
 def _do_forums(client):
     categories = client.get_forum_groups()
-    data = [{"category": c.name,
-             "forums": [{"fid": f.fid, "name": f.name, "threads": f.threads,
-                         "today_posts": f.today_posts} for f in c.forums]}
-            for c in categories]
     lines = []
     for c in categories:
         lines += ["=" * 60, f"  {c.name}", "=" * 60]
         for f in c.forums:
             lines.append(f"  [{f.fid:>4}] {f.name}")
             lines.append(f"        threads={f.threads}, today={f.today_posts}")
-    return ok({"categories": data, "text": "\n".join(lines)})
+    return ok({"text": "\n".join(lines)})
 
 
 def _do_threads(client, a):
@@ -353,11 +415,6 @@ def _do_threads(client, a):
     page = _as_int(a.get("page"), 1)
     type_id = a.get("type")
     threads, page, total_pages, thread_types = client.get_threads(fid, page, type_id)
-    data = {"page": {"current": page, "total": total_pages},
-            "thread_types": [{"type_id": t.type_id, "type_name": t.type_name} for t in thread_types],
-            "threads": [{"tid": t.tid, "title": t.title, "author": t.author,
-                         "author_id": t.author_id, "replies": t.replies, "type_name": t.type_name}
-                        for t in threads]}
     lines = []
     if thread_types:
         lines.append("类型筛选: " + "  ".join(f"[{t.type_id}] {t.type_name}" for t in thread_types))
@@ -367,9 +424,7 @@ def _do_threads(client, a):
         hide = " [HIDDEN]" if t.is_hide else ""
         lines.append(f"  #{t.tid:<7} {t.title[:50]}{type_str}")
         lines.append(f"          by {t.author}  replies={t.replies}{hide}")
-    return ok({"fid": fid, "page": page, "total_pages": total_pages,
-               "threads": data["threads"], "thread_types": data["thread_types"],
-               "text": "\n".join(lines)})
+    return ok({"text": "\n".join(lines)})
 
 
 def _do_posts(client, a):
@@ -380,23 +435,10 @@ def _do_posts(client, a):
     last = _as_int(a.get("last"), 0)
 
     if last > 0:
-        first_posts, _, total_pages, thread_info = client.get_posts(tid, page=1)
-        start = max(1, total_pages - last + 1)
-        posts = []
-        for p in range(start, total_pages + 1):
-            batch, _, _, _ = client.get_posts(tid, page=p)
-            posts.extend(batch)
-        page = start
+        posts, page, total_pages, thread_info = client.get_last_pages(tid, last)
     else:
         posts, page, total_pages, thread_info = client.get_posts(tid, page)
-
-    data = {"tid": tid,
-            "thread": {"title": thread_info.title, "author": thread_info.author} if thread_info else None,
-            "page": {"current": page, "total": total_pages},
-            "posts": [{"pid": p.pid, "author": p.author, "number": p.number, "is_first": p.is_first,
-                       "is_op": p.is_op, "datetime": format_timestamp(p.datetime),
-                       "message": _convert_reply_quotes(p.message)}
-                      for p in posts]}
+    posts = _dedupe_posts(posts)
 
     lines = []
     if thread_info:
@@ -410,8 +452,7 @@ def _do_posts(client, a):
         content = _convert_reply_quotes(p.message)
         lines.append(content if content else "*(无内容)*")
     lines.append(f"\n--- 第 {page}/{total_pages} 页 ---")
-    return ok({"tid": tid, "thread": data["thread"], "page": data["page"],
-               "posts": data["posts"], "text": "\n".join(lines)})
+    return ok({"text": "\n".join(lines)})
 
 
 def _do_login(client, a):
@@ -421,8 +462,7 @@ def _do_login(client, a):
         return error("缺少账号/密码：传 username/password，或设置 S1_USERNAME / S1_PASSWORD",
                      code="invalid_argument")
     client.login(username, password)
-    return ok({"username": client.username, "uid": client.uid,
-               "text": f"✅ 已登录: {client.username} (uid={client.uid})"})
+    return ok({"text": f"已登录: {client.username} (uid={client.uid})"})
 
 
 def _do_reply(client, a):
@@ -438,7 +478,7 @@ def _do_reply(client, a):
                          code="not_configured")
         client.login(username, password)
     client.reply(tid, message)
-    return ok({"tid": tid, "text": f"✅ 已回复 #{tid}"})
+    return ok({"text": f"已回复 #{tid}"})
 
 
 def run(arguments):
