@@ -3,38 +3,24 @@
 # status: enable
 # usage:
 #   arguments.action = states | state | call | history | logbook | services | template | config | ping
-#     states                  列出实体（可按 domain / area / search / 只看异常，默认精简输出）
-#     state                   读取指定实体当前状态（arguments.entity_id，逗号分隔可多值）
-#     call                    调用服务改变设备（arguments.domain + arguments.service + arguments.data）
-#     history                 历史状态（arguments.entity_id + 可选 hours 或 start/end）
-#     logbook                 日志记录（可选 arguments.entity_id）
-#     services                可用服务列表（给 domain 只列该域；给 service 返回该服务参数说明）
-#     template                渲染 Jinja2 模板（arguments.template），复杂查询首选
-#     config                  实例信息（版本 / 位置 / 时区 / 单位制）
-#     ping                    连通性与鉴权自检
-#   arguments.entity_id = 实体 ID，如 light.living_room（多值用逗号分隔）
+#     states    列实体，可用 domain / area / search / unavailable 筛选；state 读单个实体
+#     call      调服务，需 domain + service + data（如 {"entity_id": "light.x"}）
+#     history / logbook  历史与日志，可选 entity_id、hours 或 start/end
+#     services  可用服务（给 domain 只看该域，再给 service 看参数）
+#     template  渲染 Jinja2，复杂查询首选
+#   arguments.entity_id = 实体 ID，逗号分隔可多值（如 light.living_room）
 #   arguments.domain    = 域，如 sensor / switch / automation
-#   arguments.area      = 区域 ID 或名称，如 living_room / 客厅
-#   arguments.search    = 按 entity_id 或友好名称做子串匹配
-#   arguments.unavailable = true 只看离线/未知实体（排查故障）
-#   arguments.detail    = true 时额外返回 attributes、last_changed、last_updated
-#   arguments.limit     = 最大条数（默认 states=100，history=0 不限，logbook=50）
-#   arguments.hours     = history / logbook 往回多少小时（默认 1）
-#   arguments.start / end = ISO 时间，优先于 hours，如 2026-10-19T00:00:00
-#   arguments.data      = call 的参数字典，如 {"entity_id": "switch.x", "brightness": 128}
-#   arguments.template  = Jinja2 模板字符串（template）
-#   arguments.timeout   = 请求超时秒数（默认 15）
-#   arguments.url / token = 可选，覆盖配置中的 HA_URL / HA_TOKEN
-#   HTTPS（自签名证书 / 直接以 IP 访问 https 时用）:
-#   arguments.verify    = verify（默认，严格校验证书与主机名）/ none（跳过校验）
-#   arguments.ca_bundle = 指定 CA 证书或服务端证书文件路径，仍做完整校验
-#   arguments.fingerprint = 证书 SHA-256 指纹（64 位十六进制），启用证书固定
-#   配置: config.json 也可写 HA_VERIFY / HA_CA_BUNDLE / HA_CERT_FINGERPRINT
-#   配置: 同目录 config.json —— HA_URL（如 http://homeassistant.local:8123）、HA_TOKEN（长期访问令牌）
+#   arguments.area      = 区域 ID 或名称；arguments.search = 匹配 entity_id 或友好名
+#   arguments.unavailable = true 只看离线/未知实体；detail = true 附带属性和时间戳
+#   arguments.limit     = 条数上限（states 100 / logbook 50 / history 0 不限）
+#   arguments.hours     = 回看小时数（history 1 / logbook 24），start / end 为 ISO 时间可替代
+#   arguments.url / token = 临时覆盖配置里的 HA_URL / HA_TOKEN
+#   HTTPS: verify = verify（默认严格）/ none（自签名）；或用 ca_bundle 指定证书文件，
+#          或用 fingerprint 固定证书 SHA-256 指纹
+#   配置: 同目录 config.json —— HA_URL、HA_TOKEN（可选 HA_VERIFY / HA_CA_BUNDLE / HA_CERT_FINGERPRINT）
 #   示例: {"action": "states", "domain": "light"}
-#   示例: {"action": "state", "entity_id": "sensor.living_room_temperature"}
 #   示例: {"action": "call", "domain": "light", "service": "toggle", "data": {"entity_id": "light.living_room"}}
-#   示例: {"action": "template", "template": "{{ states('sensor.living_room_temperature') }}"}
+#   示例: {"action": "template", "template": "{{ states('sensor.temp') }}"}
 """Home Assistant REST API skill（纯标准库，无第三方依赖）。
 
 设计要点：
