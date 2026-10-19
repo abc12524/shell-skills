@@ -1,5 +1,5 @@
 # skill: smb
-# description: SMB/CIFS 文件传输（基于系统 smbclient）：文件/文件夹上传、下载、删除、列表
+# description: SMB/CIFS 文件传输（纯 Python smbprotocol）：文件/文件夹上传、下载、删除、列表
 # status: enable
 # usage:
 #   arguments.action = upload | download | delete | list
@@ -10,28 +10,25 @@
 #   连接参数（也可用同目录 config.json / 环境变量 SMB_* 提供）：
 #     arguments.host     主机名或 IP（必填）
 #     arguments.share    共享名（必填）
-#     arguments.username 用户名（可写 domain\\user / user@domain；省略则匿名 -N）
-#     arguments.password 密码（默认空 / 匿名）
+#     arguments.username 用户名（可写 domain\\user / user@domain；省略为匿名）
+#     arguments.password 密码（默认空）
 #     arguments.domain   域 / 工作组（可省略）
 #     arguments.port     端口（默认 445）
-#     arguments.timeout  单个 smbclient 调用的超时秒数（默认 60）
+#     arguments.timeout  连接超时秒数（默认 60）
 #   路径参数：
 #     arguments.remote_path 共享内路径，如 "dir/file.txt"（相对共享根）
 #     arguments.local_path  本机路径（绝对或相对当前目录）
 #     arguments.recursive   删除目录时是否递归（默认 false；upload/download 目录恒递归）
-#   说明: 依赖系统 smbclient 可执行文件（Debian/Ubuntu: samba-client；RHEL: samba-client；
-#         Windows: 需自行提供 smbclient.exe）。
-#         密码通过环境变量 PASSWD 传递，不出现在命令行参数中；列表解析对含连续空格的文件名
-#         可能不准，目录传输使用 smbclient 原生 mget/mput 递归。
+#   说明: 依赖 smbprotocol（pip install smbprotocol），无需系统 smbclient；
+#         跨平台（Windows / Linux / macOS），支持 SMB 2.x / 3.x。
 #   示例: {"action": "list", "host": "192.168.1.10", "share": "data", "username": "u", "password": "p"}
 #         {"action": "upload", "local_path": "./a.txt", "remote_path": "docs/a.txt", ...}
 #         {"action": "download", "remote_path": "docs", "local_path": "./dst", ...}
 #         {"action": "delete", "remote_path": "docs", "recursive": true, ...}
 import json
 import os
-import re
 import shutil
-import subprocess
+import stat as stat_module
 import sys
 
 try:  # android-agent / kelivo-agent：技能目录部署了 _envelope.py
@@ -39,8 +36,58 @@ try:  # android-agent / kelivo-agent：技能目录部署了 _envelope.py
 except ImportError:  # shell-tool：使用 core.tools.envelope
     from core.tools.envelope import ok, error
 
+try:
+    import logging
+    import smbclient
+    logging.getLogger("smbprotocol").setLevel(logging.CRITICAL)
+    logging.getLogger("smbclient").setLevel(logging.CRITICAL)
+    _SMB_IMPORT_ERROR = None
+except ImportError as exc:  # 缺失依赖时在 run() 里返回可读错误
+    smbclient = None
+    _SMB_IMPORT_ERROR = str(exc)
+
 DEFAULT_TIMEOUT = 60
-_LS_RE = re.compile(r"^ {2}(?P<name>.*?)\s{2,}(?P<attrs>[A-Za-z]{1,8})\s+(?P<size>\d+)\s+\S")
+
+_ERROR_BY_NAME = {
+    "LogonFailure": ("登录失败（用户名或密码错误）", "logon_failure"),
+    "SMBAuthenticationError": ("认证失败（用户名/密码/域或 NTLM 未启用）", "logon_failure"),
+    "AccessDenied": ("访问被拒绝（权限不足）", "access_denied"),
+    "ObjectNameNotFound": ("路径不存在", "not_found"),
+    "ObjectPathNotFound": ("上级路径不存在", "not_found"),
+    "NoSuchFile": ("文件不存在", "not_found"),
+    "BadNetworkName": ("共享不存在或不可访问", "bad_network_name"),
+    "DirectoryNotEmpty": ("目录非空", "directory_not_empty"),
+    "FileIsADirectory": ("目标是目录", "is_directory"),
+    "NotADirectory": ("目标不是目录", "not_a_directory"),
+    "CannotDelete": ("无法删除（可能被占用或只读）", "cannot_delete"),
+    "FileExists": ("目标已存在", "already_exists"),
+    "ObjectNameCollision": ("名称冲突（目标已存在）", "already_exists"),
+    "SharingViolation": ("文件被占用（共享冲突）", "sharing_violation"),
+}
+
+_ERRNO_CODE = {
+    2: "not_found",
+    13: "access_denied",
+    17: "already_exists",
+    20: "not_a_directory",
+    21: "is_directory",
+    39: "directory_not_empty",
+}
+
+_NTSTATUS_CODE = {
+    0xC0000034: ("路径不存在", "not_found"),
+    0xC000003A: ("上级路径不存在", "not_found"),
+    0xC0000225: ("共享或路径不存在", "bad_network_name"),
+    0xC0000022: ("访问被拒绝（权限不足）", "access_denied"),
+    0xC000006D: ("登录失败（用户名或密码错误）", "logon_failure"),
+    0xC00000CC: ("共享不存在或不可访问", "bad_network_name"),
+    0xC0000101: ("目录非空", "directory_not_empty"),
+    0xC00000BA: ("目标是目录", "is_directory"),
+    0xC0000103: ("目标不是目录", "not_a_directory"),
+    0xC0000043: ("文件被占用（共享冲突）", "sharing_violation"),
+    0xC0000035: ("名称冲突（目标已存在）", "already_exists"),
+    0xC0000121: ("无法删除（可能被占用或只读）", "cannot_delete"),
+}
 
 
 class SMBError(Exception):
@@ -91,14 +138,33 @@ def _remote_join(parent, name):
     return parent + "\\" + name
 
 
-def _quote(value):
-    text = str(value)
-    if '"' in text:
-        raise SMBError('路径不支持包含双引号: %r' % text, "invalid_argument")
-    return '"' + text + '"'
+def _safe_name(name):
+    if name in ("", ".", "..") or "\\" in name or "/" in name:
+        raise SMBError("服务器返回了非法文件名: %r" % name, "bad_response")
+    return name
 
 
-class SmbClient:
+def _describe(exc):
+    name = type(exc).__name__
+    if name in _ERROR_BY_NAME:
+        return _ERROR_BY_NAME[name]
+    status = getattr(exc, "ntstatus", None)
+    if status is not None:
+        try:
+            status = int(status)
+        except (TypeError, ValueError):
+            status = None
+    if status in _NTSTATUS_CODE:
+        return _NTSTATUS_CODE[status]
+    errno = getattr(exc, "errno", None)
+    if errno in _ERRNO_CODE:
+        return str(exc), _ERRNO_CODE[errno]
+    if isinstance(exc, (ConnectionError, TimeoutError)):
+        return "连接失败: %s" % exc, "connect_failed"
+    return "%s: %s" % (name, exc), "smb_error"
+
+
+class SmbSession:
     def __init__(self, host, share, username, password, domain="", port=445, timeout=DEFAULT_TIMEOUT):
         self.host = host
         self.share = share.strip("\\/")
@@ -106,163 +172,87 @@ class SmbClient:
         self.password = password or ""
         self.port = int(port)
         self.timeout = float(timeout)
-        self.binary = shutil.which("smbclient")
+        self.root = "\\\\%s\\%s" % (self.host, self.share)
 
-    def _command(self, script):
-        if not self.binary:
-            raise SMBError("未找到 smbclient，请先安装（Debian/Ubuntu: samba-client，RHEL: samba-client）",
-                           "not_installed")
-        cmd = [self.binary, "//%s/%s" % (self.host, self.share), "-p", str(self.port)]
-        if self.username:
-            cmd += ["-U", self.username]
-        else:
-            cmd += ["-N"]
-        if self.domain:
-            cmd += ["-W", self.domain]
-        if not self.password and self.username:
-            cmd += ["-N"]
-        cmd += ["-c", script]
-        return cmd
+    def _kwargs(self):
+        account = self.username
+        if account and self.domain:
+            account = self.domain + "\\" + account
+        return {
+            "username": account,
+            "password": self.password,
+            "port": self.port,
+            "connection_timeout": self.timeout,
+        }
 
-    def run(self, script, strict=True):
-        env = os.environ.copy()
-        env["LC_ALL"] = "C"
-        env["PASSWD"] = self.password
-        try:
-            proc = subprocess.run(self._command(script), capture_output=True, text=True,
-                                  errors="replace", timeout=self.timeout, env=env,
-                                  stdin=subprocess.DEVNULL)
-        except FileNotFoundError:
-            raise SMBError("未找到 smbclient，请先安装（samba-client）", "not_installed")
-        except subprocess.TimeoutExpired:
-            raise SMBError("smbclient 执行超时（%ss）" % self.timeout, "timeout")
-        except OSError as exc:
-            raise SMBError("无法启动 smbclient: %s" % exc, "io_error")
-        output = (proc.stdout or "") + (proc.stderr or "")
-        status_line = _extract_error(output)
-        if _is_fatal(status_line):
-            raise SMBError("smbclient 失败: %s" % status_line, _status_code(status_line))
-        if proc.returncode != 0:
-            detail = status_line or (proc.stderr or "").strip() or "退出码 %d" % proc.returncode
-            if strict or not status_line:
-                raise SMBError("smbclient 失败: %s" % detail, _status_code(detail))
-            return output
-        if strict and status_line:
-            raise SMBError("操作失败: %s" % status_line, _status_code(status_line))
-        return output
+    def path(self, remote):
+        return self.root + ("\\" + remote if remote else "")
 
-    def mkdir_p(self, path):
-        if not path:
-            return
-        prefix = ""
-        commands = []
-        for part in path.split("\\"):
-            if not part:
-                continue
-            prefix = part if not prefix else prefix + "\\" + part
-            commands.append("mkdir " + _quote(prefix))
-        self.run("; ".join(commands), strict=False)
+    def connect(self):
+        smbclient.register_session(self.host, **self._kwargs())
 
-    def probe(self, path):
-        if not path:
-            return "dir"
-        if "NT_STATUS_" not in self.run("cd " + _quote(path), strict=False):
-            return "dir"
-        if "NT_STATUS_" not in self.run("ls " + _quote(path), strict=False):
-            return "file"
-        return "missing"
+    def stat(self, remote):
+        return smbclient.stat(self.path(remote), follow_symlinks=False, **self._kwargs())
 
-    def list_entries(self, path, is_dir=True):
-        if is_dir:
-            commands = []
-            if path:
-                commands.append("cd " + _quote(path))
-            commands.append("ls")
-            script = "; ".join(commands)
-        else:
-            script = "ls " + _quote(path)
-        output = self.run(script, strict=False)
-        if _extract_error(output):
-            raise SMBError("列举失败: %s" % _extract_error(output), _status_code(_extract_error(output)))
-        entries = []
-        for line in output.splitlines():
-            match = _LS_RE.match(line)
-            if not match:
-                continue
-            name = match.group("name").strip()
-            if name in ("", ".", ".."):
-                continue
-            entries.append({
-                "name": name,
-                "is_dir": "D" in match.group("attrs").upper(),
-                "size": int(match.group("size")),
-                "attributes": match.group("attrs"),
-            })
-        return entries
+    def makedirs(self, remote):
+        if remote:
+            smbclient.makedirs(self.path(remote), exist_ok=True, **self._kwargs())
 
-    def delete_tree(self, path, recursive):
-        entries = self.list_entries(path)
+    def entries(self, remote):
+        result = []
+        with smbclient.scandir(self.path(remote), **self._kwargs()) as iterator:
+            for entry in iterator:
+                info = entry.stat(follow_symlinks=False)
+                result.append({
+                    "name": entry.name,
+                    "is_dir": stat_module.S_ISDIR(info.st_mode),
+                    "size": info.st_size,
+                })
+        return result
+
+    def upload_file(self, local_path, remote_path):
+        parent = remote_path.rsplit("\\", 1)[0] if "\\" in remote_path else ""
+        self.makedirs(parent)
+        with open(local_path, "rb") as source:
+            with smbclient.open_file(self.path(remote_path), mode="wb", **self._kwargs()) as target:
+                shutil.copyfileobj(source, target, 1024 * 1024)
+
+    def download_file(self, remote_path, local_path):
+        temp_path = local_path + ".smbpart"
+        with smbclient.open_file(self.path(remote_path), mode="rb", **self._kwargs()) as source:
+            with open(temp_path, "wb") as target:
+                shutil.copyfileobj(source, target, 1024 * 1024)
+        os.replace(temp_path, local_path)
+
+    def remove_file(self, remote_path):
+        smbclient.remove(self.path(remote_path), **self._kwargs())
+
+    def remove_dir(self, remote_path):
+        smbclient.rmdir(self.path(remote_path), **self._kwargs())
+
+    def delete_tree(self, remote_path, recursive):
+        entries = self.entries(remote_path)
         if entries and not recursive:
-            raise SMBError("目录非空，需 recursive=true: %s" % path, "directory_not_empty")
+            raise SMBError("目录非空，需 recursive=true: %s" % remote_path, "directory_not_empty")
         files = 0
         dirs = 0
         for entry in entries:
-            child = _remote_join(path, entry["name"])
+            child = _remote_join(remote_path, _safe_name(entry["name"]))
             if entry["is_dir"]:
                 sub_files, sub_dirs = self.delete_tree(child, recursive)
                 files += sub_files
                 dirs += sub_dirs
             else:
-                self.run("del " + _quote(child))
+                self.remove_file(child)
                 files += 1
-        self.run("rmdir " + _quote(path))
+        self.remove_dir(remote_path)
         return files, dirs + 1
-
-
-def _extract_error(output):
-    for line in output.splitlines():
-        if "NT_STATUS_" in line:
-            return line.strip()
-    return ""
-
-
-_FATAL_STATUSES = (
-    "LOGON_FAILURE", "PASSWORD_EXPIRED", "PASSWORD_MUST_CHANGE", "ACCOUNT_DISABLED",
-    "ACCOUNT_RESTRICTION", "LOGON_TYPE_NOT_GRANTED", "BAD_NETWORK_NAME",
-    "NETWORK_NAME_DELETED", "NO_LOGON_SERVERS", "ACCESS_DENIED",
-)
-
-
-def _is_fatal(text):
-    return bool(text) and any(marker in text for marker in _FATAL_STATUSES)
-
-
-def _status_code(text):
-    if "LOGON_FAILURE" in text or "PASSWORD" in text:
-        return "logon_failure"
-    if "ACCESS_DENIED" in text:
-        return "access_denied"
-    if "OBJECT_NAME_NOT_FOUND" in text or "OBJECT_PATH_NOT_FOUND" in text:
-        return "not_found"
-    if "DIRECTORY_NOT_EMPTY" in text:
-        return "directory_not_empty"
-    if "OBJECT_NAME_COLLISION" in text or "OBJECT_NAME_EXISTS" in text:
-        return "already_exists"
-    if "SHARING_VIOLATION" in text:
-        return "sharing_violation"
-    if "BAD_NETWORK_NAME" in text:
-        return "bad_network_name"
-    if "NOT_A_DIRECTORY" in text:
-        return "not_a_directory"
-    if "IS_A_DIRECTORY" in text:
-        return "is_directory"
-    return "smb_error"
 
 
 def _connection(a):
     host = str(a.get("host") or os.environ.get("SMB_HOST") or "").strip()
     share = str(a.get("share") or os.environ.get("SMB_SHARE") or "").strip()
-    username = a.get("username") or os.environ.get("SMB_USERNAME")
+    username = a.get("username") or os.environ.get("SMB_USERNAME") or ""
     password = a.get("password")
     if password is None:
         password = os.environ.get("SMB_PASSWORD", "")
@@ -280,7 +270,7 @@ def _connection(a):
         timeout = float(timeout)
     except (TypeError, ValueError):
         raise SMBError("port/timeout 必须是数字", "invalid_argument")
-    return SmbClient(host, share, username, str(password), domain, port, timeout)
+    return SmbSession(host, share, username, str(password), domain, port, timeout)
 
 
 def _local_path(a, key):
@@ -305,96 +295,111 @@ def _walk_stats(root):
     return files, dirs, bytes_total
 
 
-def _do_upload(client, a):
+def _upload_tree(session, local_root, remote_root, stats):
+    session.makedirs(remote_root)
+    stats["dirs"] += 1
+    for dirpath, _, filenames in os.walk(local_root):
+        rel = os.path.relpath(dirpath, local_root)
+        remote_dir = remote_root
+        if rel not in (".", ""):
+            remote_dir = _remote_join(remote_root, rel.replace(os.sep, "\\"))
+            session.makedirs(remote_dir)
+            stats["dirs"] += 1
+        for name in filenames:
+            local_file = os.path.join(dirpath, name)
+            session.upload_file(local_file, _remote_join(remote_dir, name))
+            stats["files"] += 1
+            try:
+                stats["bytes"] += os.path.getsize(local_file)
+            except OSError:
+                pass
+
+
+def _download_tree(session, remote_root, local_root, stats):
+    os.makedirs(local_root, exist_ok=True)
+    for entry in session.entries(remote_root):
+        name = _safe_name(entry["name"])
+        local_child = os.path.join(local_root, name)
+        remote_child = _remote_join(remote_root, name)
+        if entry["is_dir"]:
+            _download_tree(session, remote_child, local_child, stats)
+            stats["dirs"] += 1
+        else:
+            session.download_file(remote_child, local_child)
+            stats["files"] += 1
+            stats["bytes"] += entry["size"]
+
+
+def _do_upload(session, a):
     local = _local_path(a, "local_path")
     if not os.path.exists(local):
         raise SMBError("本地路径不存在: %s" % local, "not_found")
     remote = _normalize_remote(a.get("remote_path"))
     trailing = str(a.get("remote_path") or "").endswith(("/", "\\"))
+    stats = {"files": 0, "dirs": 0, "bytes": 0}
     if os.path.isdir(local):
         if not remote or trailing:
             remote = _remote_join(remote, os.path.basename(local.rstrip(os.sep)))
-        client.mkdir_p(remote)
-        commands = ["lcd " + _quote(local), "prompt OFF", "recurse ON"]
-        if remote:
-            commands.append("cd " + _quote(remote))
-        commands.append("mput *")
-        client.run("; ".join(commands))
-        files, dirs, bytes_total = _walk_stats(local)
-        return ok({"action": "upload", "remote_path": remote, "local_path": local,
-                   "files": files, "dirs": dirs, "bytes": bytes_total})
-    if not remote or trailing:
-        remote = _remote_join(remote, os.path.basename(local))
-    client.mkdir_p(remote.rsplit("\\", 1)[0] if "\\" in remote else "")
-    client.run("put %s %s" % (_quote(local), _quote(remote)))
+        _upload_tree(session, local, remote, stats)
+    else:
+        if not remote or trailing:
+            remote = _remote_join(remote, os.path.basename(local))
+        session.upload_file(local, remote)
+        stats["files"] = 1
+        stats["bytes"] = os.path.getsize(local)
     return ok({"action": "upload", "remote_path": remote, "local_path": local,
-               "files": 1, "dirs": 0, "bytes": os.path.getsize(local)})
+               "files": stats["files"], "dirs": stats["dirs"], "bytes": stats["bytes"]})
 
 
-def _do_download(client, a):
+def _do_download(session, a):
     remote = _normalize_remote(a.get("remote_path"))
     if not remote:
         raise SMBError("download 需要 remote_path", "invalid_argument")
     local = _local_path(a, "local_path")
     trailing = str(a.get("local_path") or "").endswith((os.sep, "/", "\\"))
-    kind = client.probe(remote)
-    if kind == "missing":
-        raise SMBError("远程路径不存在: %s" % remote, "not_found")
-    if kind == "dir":
-        target = local
+    info = session.stat(remote)
+    if stat_module.S_ISDIR(info.st_mode):
         if os.path.exists(local) and not os.path.isdir(local):
             raise SMBError("本地目标已存在且不是目录: %s" % local, "invalid_argument")
-        os.makedirs(target, exist_ok=True)
-        commands = ["lcd " + _quote(target), "prompt OFF", "recurse ON"]
-        if remote:
-            commands.append("cd " + _quote(remote))
-        commands.append("mget *")
-        client.run("; ".join(commands))
-        files, dirs, bytes_total = _walk_stats(target)
-        return ok({"action": "download", "remote_path": remote, "local_path": target,
-                   "files": files, "dirs": dirs, "bytes": bytes_total})
+        stats = {"files": 0, "dirs": 0, "bytes": 0}
+        _download_tree(session, remote, local, stats)
+        return ok({"action": "download", "remote_path": remote, "local_path": local,
+                   "files": stats["files"], "dirs": stats["dirs"], "bytes": stats["bytes"]})
     target = local
     if os.path.isdir(local) or trailing:
         target = os.path.join(local, remote.rsplit("\\", 1)[-1])
     parent = os.path.dirname(target)
     if parent:
         os.makedirs(parent, exist_ok=True)
-    client.run("get %s %s" % (_quote(remote), _quote(target)))
-    size = os.path.getsize(target) if os.path.exists(target) else 0
+    session.download_file(remote, target)
     return ok({"action": "download", "remote_path": remote, "local_path": target,
-               "files": 1, "dirs": 0, "bytes": size})
+               "files": 1, "dirs": 0, "bytes": os.path.getsize(target)})
 
 
-def _do_delete(client, a):
+def _do_delete(session, a):
     remote = _normalize_remote(a.get("remote_path"))
     if not remote:
         raise SMBError("不允许删除共享根，请指定 remote_path", "invalid_argument")
     recursive = bool(a.get("recursive", False))
-    kind = client.probe(remote)
-    if kind == "missing":
-        raise SMBError("远程路径不存在: %s" % remote, "not_found")
-    if kind == "dir":
-        files, dirs = client.delete_tree(remote, recursive)
+    info = session.stat(remote)
+    if stat_module.S_ISDIR(info.st_mode):
+        files, dirs = session.delete_tree(remote, recursive)
         return ok({"action": "delete", "remote_path": remote, "deleted_files": files,
                    "deleted_dirs": dirs, "recursive": recursive})
-    client.run("del " + _quote(remote))
+    session.remove_file(remote)
     return ok({"action": "delete", "remote_path": remote, "deleted_files": 1,
                "deleted_dirs": 0, "recursive": recursive})
 
 
-def _do_list(client, a):
+def _do_list(session, a):
     remote = _normalize_remote(a.get("remote_path"))
-    kind = client.probe(remote) if remote else "dir"
-    if kind == "missing":
-        raise SMBError("远程路径不存在: %s" % remote, "not_found")
-    if kind == "file":
-        entries = client.list_entries(remote, is_dir=False)
-        if not entries:
-            entries = [{"name": remote.rsplit("\\", 1)[-1], "is_dir": False,
-                        "size": 0, "attributes": ""}]
-        return ok({"action": "list", "path": remote, "count": len(entries),
-                   "entries": entries})
-    entries = client.list_entries(remote)
+    if remote:
+        info = session.stat(remote)
+        if not stat_module.S_ISDIR(info.st_mode):
+            return ok({"action": "list", "path": remote, "count": 1,
+                       "entries": [{"name": remote.rsplit("\\", 1)[-1], "is_dir": False,
+                                    "size": info.st_size}]})
+    entries = session.entries(remote)
     return ok({"action": "list", "path": remote, "count": len(entries), "entries": entries})
 
 
@@ -409,17 +414,22 @@ _ACTIONS = {
 def run(arguments):
     a = arguments or {}
     _load_config()
+    if _SMB_IMPORT_ERROR is not None:
+        return error("缺少依赖 smbprotocol，请先安装：pip install smbprotocol（%s）" % _SMB_IMPORT_ERROR,
+                     code="not_installed")
     action = str(a.get("action") or "list").strip().lower()
     if action not in _ACTIONS:
         return error("未知 action '%s'，可用: %s" % (action, " / ".join(_ACTIONS)),
                      code="unknown_action")
     try:
-        client = _connection(a)
-        return _ACTIONS[action](client, a)
+        session = _connection(a)
+        session.connect()
+        return _ACTIONS[action](session, a)
     except SMBError as exc:
         return error(str(exc), code=exc.code)
-    except (OSError, ValueError) as exc:
-        return error("本地 I/O 失败: %s" % exc, code="io_error")
+    except Exception as exc:
+        message, code = _describe(exc)
+        return error(message, code=code)
 
 
 if __name__ == "__main__":  # 本地调试：python skill.py '{"action":"list","host":"...","share":"...","username":"..."}'

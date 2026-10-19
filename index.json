@@ -146,12 +146,12 @@
     },
     {
       "name": "smb",
-      "description": "SMB/CIFS 文件传输（系统 smbclient）：文件/文件夹上传、下载、删除、列表",
+      "description": "SMB/CIFS 文件传输（smbprotocol）：文件/文件夹上传、下载、删除、列表",
       "platform": ["linux", "windows"],
       "path": "smb",
       "entry": "skill.py",
-      "version": "1.0.0",
-      "requires": [],
+      "version": "1.1.0",
+      "requires": ["smbprotocol"],
       "config": ["SMB_HOST", "SMB_SHARE", "SMB_USERNAME", "SMB_PASSWORD", "SMB_DOMAIN", "SMB_PORT"]
     },
     {
