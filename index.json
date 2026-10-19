@@ -135,6 +135,16 @@
       "config": []
     },
     {
+      "name": "skill_guide",
+      "description": "如何编写 skill：规范、要求与示例（内置 skill_README.md）",
+      "platform": ["linux", "windows", "android", "ios"],
+      "path": "skill_guide",
+      "entry": "skill.py",
+      "version": "1.0.0",
+      "requires": [],
+      "config": []
+    },
+    {
       "name": "timestamp",
       "description": "时间戳转换（当前时间 / 时间戳转日期 / 日期转时间戳，支持时区与自定义格式）",
       "platform": ["linux", "windows", "android", "ios"],
