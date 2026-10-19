@@ -12,7 +12,7 @@
 #   示例: {"action": "threads", "fid": "4", "page": 1}
 #   示例: {"action": "posts", "tid": "1234567", "last": 3}
 #   示例: {"action": "reply", "tid": "1234567", "message": "回复内容"}
-#   常用版块 fid: 归墟=157  动漫论坛=6  ＰＣ数码=51
+#   常用版块 fid: 归墟/外野=157  动漫论坛=6  ＰＣ数码=51
 #
 # 配置：账号/主机读取环境变量（同目录 config.json，模板见 config.example.json）。
 #   S1_USERNAME / S1_PASSWORD / S1_HOST / S1_COOKIE_FILE
