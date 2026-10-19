@@ -21,7 +21,8 @@
 ## 目录与运行环境
 
 - 运行 Python：应用内置的 **Python 3.13**（完整标准库 + pip，清华源）。可用 `system_tool` 的
-  `python_pip` 安装第三方包（如 `requests`）。
+  `python_pip` 安装第三方包（如 `requests`）。**任务中下载/添加的 Python 模块，需先结束本轮
+  输出，由用户再次提问后才会被读取到。**
 - 脚本工作目录即本目录，可直接 `import` 同目录下的其他脚本或 `_envelope`。
 - 执行方式：`skill` 工具的调用会在独立进程中导入脚本并调用 `run(arguments)`。
 
