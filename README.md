@@ -20,6 +20,7 @@ shell-skills/
 ├── dustls/             磁盘占用分析（dust 纯数据输出，LLM 友好）
 ├── exif/               图片 EXIF 工具（读取 / 移除 GPS / 移除全部 / 写入 / 备注）
 ├── ftp/                FTP/FTPS 文件传输（ftplib，兼容 vsftpd：上传 / 下载 / 删除 / 列表）
+├── home_assistant/     Home Assistant 智能家居（实体状态 / 服务调用 / 历史日志 / 模板渲染）
 ├── mail/               多邮箱通用工具（列收件箱 / 读邮件 / 发邮件 / 查未读）
 ├── news/               查询 MySQL 新闻库：早报 / 晚报 / 热榜与关键词检索
 ├── nga/                NGA 论坛浏览（分类 / 帖子 / 回复 / 搜索 / 登录）

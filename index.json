@@ -75,6 +75,16 @@
       "config": ["FTP_HOST", "FTP_PORT", "FTP_USERNAME", "FTP_PASSWORD", "FTP_SECURE", "FTP_ENCODING"]
     },
     {
+      "name": "home_assistant",
+      "description": "Home Assistant 智能家居控制：实体状态查询 / 服务调用（开关灯、设温度）/ 历史与日志 / 模板渲染",
+      "platform": ["linux", "windows", "android", "ios"],
+      "path": "home_assistant",
+      "entry": "skill.py",
+      "version": "1.0.0",
+      "requires": [],
+      "config": ["HA_URL", "HA_TOKEN"]
+    },
+    {
       "name": "mail",
       "description": "多邮箱通用工具（163/126/yeah/qq/gmail/outlook）：列收件箱 / 读邮件 / 发邮件 / 查未读",
       "platform": ["linux", "windows", "android", "ios"],
