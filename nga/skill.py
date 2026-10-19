@@ -2,16 +2,16 @@
 # description: NGA 论坛（bbs.nga.cn）浏览：版块分类 / 版块帖子列表 / 帖子回复 / 版块搜索 / 登录
 # status: enable
 # usage:
-#   arguments.cmd = categories | threads | read | search | login（默认 categories）
+#   arguments.action = categories | threads | read | search | login（默认 categories）
 #     categories                     列出全部版块分类与子版块（含 fid/stid）
 #     threads  arguments.fid         列版块帖子；可选 arguments.page / arguments.stid
 #     read     arguments.tid         看帖子回复；可选 arguments.page
 #     search   arguments.keyword     按关键词搜索版块
 #     login    arguments.cookie      保存登录 Cookie（缺省读 NGA_COOKIE）
-#   示例: {"cmd": "categories"}
-#   示例: {"cmd": "threads", "fid": 650, "page": 1}
-#   示例: {"cmd": "read", "tid": 46826141}
-#   示例: {"cmd": "search", "keyword": "晴风村"}
+#   示例: {"action": "categories"}
+#   示例: {"action": "threads", "fid": 650, "page": 1}
+#   示例: {"action": "read", "tid": 46826141}
+#   示例: {"action": "search", "keyword": "晴风村"}
 #
 # 配置：域名/Cookie 读取环境变量（同目录 config.json，模板见 config.example.json）。
 #   NGA_DOMAIN / NGA_COOKIE / NGA_INSECURE / NGA_COOKIE_FILE
@@ -270,7 +270,7 @@ def _do_categories(client):
 def _do_threads(client, a):
     fid = a.get("fid")
     if fid in (None, ""):
-        return error("cmd=threads 需要 fid", code="missing_argument")
+        return error("action=threads 需要 fid", code="missing_argument")
     page = _as_int(a.get("page"), 1)
     stid = a.get("stid")
     data = client.get_forum_topics(fid, page, stid)
@@ -305,7 +305,7 @@ def _do_threads(client, a):
 def _do_read(client, a):
     tid = a.get("tid")
     if tid in (None, ""):
-        return error("cmd=read 需要 tid", code="missing_argument")
+        return error("action=read 需要 tid", code="missing_argument")
     page = _as_int(a.get("page"), 1)
     data = client.read_topic(tid, page)
     if "error" in data:
@@ -369,7 +369,7 @@ def _do_read(client, a):
 def _do_search(client, a):
     keyword = str(a.get("keyword") or "").strip()
     if not keyword:
-        return error("cmd=search 需要 keyword", code="missing_argument")
+        return error("action=search 需要 keyword", code="missing_argument")
     data = client.search_forum(keyword)
     d = data.get("data", {})
     results = d.get("__T") or {}
@@ -392,7 +392,7 @@ def _do_search(client, a):
 def _do_login(client, a):
     cookie = a.get("cookie") or os.environ.get("NGA_COOKIE")
     if not cookie:
-        return error("cmd=login 需要 cookie（或设置 NGA_COOKIE）", code="invalid_argument")
+        return error("action=login 需要 cookie（或设置 NGA_COOKIE）", code="invalid_argument")
     client.session.cookies.update(_parse_cookie(cookie))
     path = client.save_cookies()
     return ok({"cookie_file": path, "text": f"✅ 已保存登录 Cookie → {path}"})
@@ -402,24 +402,24 @@ def run(arguments):
     """skill 入口：arguments(dict) → ok()/error() 信封。"""
     a = arguments or {}
     _load_config()
-    cmd = str(a.get("cmd") or "categories").strip().lower()
+    action = str(a.get("action") or "categories").strip().lower()
 
     domain = os.environ.get("NGA_DOMAIN") or DEFAULT_DOMAIN
     insecure = _truthy(a.get("insecure")) or _truthy(os.environ.get("NGA_INSECURE"))
     client = NGAClient(domain=domain, insecure=insecure)
 
     try:
-        if cmd == "categories":
+        if action == "categories":
             return _do_categories(client)
-        if cmd == "threads":
+        if action == "threads":
             return _do_threads(client, a)
-        if cmd == "read":
+        if action == "read":
             return _do_read(client, a)
-        if cmd == "search":
+        if action == "search":
             return _do_search(client, a)
-        if cmd == "login":
+        if action == "login":
             return _do_login(client, a)
-        return error(f"未知 cmd '{cmd}'，可用: categories / threads / read / search / login",
+        return error(f"未知 action '{action}'，可用: categories / threads / read / search / login",
                      code="unknown_action")
     except requests.exceptions.RequestException as e:
         return error(f"网络请求失败: {e}", code="network_error")

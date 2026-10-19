@@ -2,16 +2,16 @@
 # description: 多邮箱工具（163/126/yeah/qq/gmail/outlook）：列表 / 读信 / 发信 / 未读
 # status: enable
 # usage:
-#   arguments.cmd      = list | read | send | monitor | folders | providers | config（默认 list）
+#   arguments.action   = list | read | send | monitor | folders | providers | config（默认 list）
 #   arguments.provider = 163 | 126 | yeah | qq | gmail | outlook（默认 163）
 #   arguments.folder   = 操作文件夹（list/read/monitor 用，默认 INBOX；见 folders）
 #   arguments.args     = read 传 [邮件ID]（HTML 正文自动转纯文本）；send 传 [收件人, 主题, 正文]
 #   arguments.max_len  = read 正文截断长度（默认 8000）
 #   账号密码：arguments.user/password > config.json accounts.<provider> > 环境变量 MAIL_USER/MAIL_PASS
-#   示例: {"cmd":"list","provider":"qq"}
-#         {"cmd":"folders"}
-#         {"cmd":"read","args":["3"],"folder":"Sent"}
-#         {"cmd":"send","args":["a@b.com","标题","正文"]}
+#   示例: {"action":"list","provider":"qq"}
+#         {"action":"folders"}
+#         {"action":"read","args":["3"],"folder":"Sent"}
+#         {"action":"send","args":["a@b.com","标题","正文"]}
 # 配置：同目录 config.json（模板 config.example.json），accounts.<provider>={"user","pass"}；可选 MAIL_CA_BUNDLE
 # 依赖：仅标准库
 """多邮箱工具 skill（列表 / 读信 / 发信 / 未读）。"""
@@ -361,8 +361,8 @@ def run(arguments):
     a = arguments or {}
     _load_config()
 
-    cmd = str(a.get("cmd") or "list").strip().lower()
-    if cmd == "providers":
+    action = str(a.get("action") or "list").strip().lower()
+    if action == "providers":
         return _do_providers()
 
     key = str(a.get("provider") or os.environ.get("MAIL_PROVIDER") or "163").lower()
@@ -387,29 +387,29 @@ def run(arguments):
     except (TypeError, ValueError):
         max_len = DEFAULT_MAX_BODY
 
-    if cmd == "config":
+    if action == "config":
         return ok({"provider": key, "name": cfg["name"], "user": user,
                    "imap": "%s:%s" % (cfg["imap_host"], cfg["imap_port"]),
                    "smtp": "%s:%s" % (cfg["smtp_host"], cfg["smtp_port"])})
     try:
-        if cmd == "folders":
+        if action == "folders":
             return _do_folders(cfg, user, password)
-        if cmd == "list":
+        if action == "list":
             return _do_list(cfg, user, password, folder)
-        if cmd == "monitor":
+        if action == "monitor":
             return _do_monitor(cfg, user, password, folder)
-        if cmd == "read":
+        if action == "read":
             if len(argv) < 1:
-                return error('用法: {"cmd": "read", "args": [邮件ID]}', code="invalid_argument")
+                return error('用法: {"action": "read", "args": [邮件ID]}', code="invalid_argument")
             return _do_read(cfg, user, password, argv[0], folder, max_len)
-        if cmd == "send":
+        if action == "send":
             if len(argv) < 3:
-                return error('用法: {"cmd": "send", "args": [收件人, 主题, 正文]}', code="invalid_argument")
+                return error('用法: {"action": "send", "args": [收件人, 主题, 正文]}', code="invalid_argument")
             return _do_send(cfg, user, password, argv[0], argv[1], argv[2])
-        return error("未知命令 %r，可用: list / read / send / monitor / folders / providers / config" % cmd,
+        return error("未知命令 %r，可用: list / read / send / monitor / folders / providers / config" % action,
                      code="invalid_argument")
     except Exception as e:
-        return error("%s 执行失败: %s" % (cmd, e), code="io_error")
+        return error("%s 执行失败: %s" % (action, e), code="io_error")
 
 
 if __name__ == "__main__":

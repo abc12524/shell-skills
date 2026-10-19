@@ -2,7 +2,7 @@
 # description: DeepSeek 网页搜索 / 抓取（官方自研搜索引擎），返回结构化网页结果
 # status: enable
 # usage:
-#   arguments.mode = search（默认，POST /v1/tools/search）| fetch（POST /v1/tools/fetch）
+#   arguments.action = search（默认，POST /v1/tools/search）| fetch（POST /v1/tools/fetch）
 #   search 模式:
 #     arguments.query = 搜索词（必填，1~128 字符，支持搜索语法 site:/"..." /lang:/after:/before: 等）
 #     arguments.count = 返回条数，默认 5，范围 1~50
@@ -12,8 +12,8 @@
 #   fetch 模式:
 #     arguments.url = 要抓取的 HTTP/HTTPS 网页地址（必填）
 #   arguments.timeout = 请求超时秒数，默认 30
-#   示例: {"mode": "search", "query": "DeepSeek V4 模型 发布", "count": 5}
-#         {"mode": "fetch", "url": "https://example.com/article"}
+#   示例: {"action": "search", "query": "DeepSeek V4 模型 发布", "count": 5}
+#         {"action": "fetch", "url": "https://example.com/article"}
 import json
 import os
 
@@ -140,11 +140,11 @@ def fetch(url, timeout=TIMEOUT):
 def run(arguments):
     """skill 入口：arguments(dict) -> ok()/error() 信封。"""
     a = arguments or {}
-    mode = (a.get("mode") or "search").strip().lower()
+    action = (a.get("action") or "search").strip().lower()
     timeout = _as_int(a.get("timeout", TIMEOUT), TIMEOUT)
 
     try:
-        if mode == "search":
+        if action == "search":
             query = (a.get("query") or "").strip()
             if not query:
                 return error("缺少必填参数 query", code="missing_argument")
@@ -158,13 +158,13 @@ def run(arguments):
             )
             return ok({"query": query, "count": len(results), "results": results})
 
-        if mode == "fetch":
+        if action == "fetch":
             url = (a.get("url") or "").strip()
             if not url:
                 return error("缺少必填参数 url", code="missing_argument")
             return ok(fetch(url, timeout=timeout))
 
-        return error(f"未知 mode '{mode}'，可用: search, fetch", code="unknown_action")
+        return error(f"未知 action '{action}'，可用: search, fetch", code="unknown_action")
     except _MissingKey as exc:
         return error(str(exc), code="missing_credential")
     except requests.exceptions.JSONDecodeError as exc:
@@ -179,6 +179,6 @@ if __name__ == "__main__":
     import sys
 
     _args = json.loads(sys.argv[1]) if len(sys.argv) > 1 else {
-        "mode": "search", "query": "DeepSeek V4 模型 发布", "count": 3
+        "action": "search", "query": "DeepSeek V4 模型 发布", "count": 3
     }
     print(run(_args))

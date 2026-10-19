@@ -2,7 +2,7 @@
 # description: 百度搜索 / 百科查询
 # status: enable
 # usage:
-#   arguments.mode = raw | summary | search | baike | baikelist | quota
+#   arguments.action = raw | summary | search | baike | baikelist | quota
 #     raw        百度搜索原始结果（默认）
 #     summary    网页摘要（AI 总结 + 来源，最快推荐）
 #     search     智能搜索生成（LLM 总结）
@@ -10,7 +10,7 @@
 #     baikelist  百科搜索列表
 #     quota      查看配额说明
 #   arguments.query = 搜索关键词或词条名（quota 模式可省略）
-#   示例: {"mode": "summary", "query": "今天北京天气"}
+#   示例: {"action": "summary", "query": "今天北京天气"}
 import json
 import os
 
@@ -202,33 +202,33 @@ def _baikelist(query):
 
 def run(arguments):
     a = arguments or {}
-    mode = (a.get("mode") or "raw").strip()
+    action = (a.get("action") or "raw").strip()
     query = (a.get("query") or "").strip()
 
-    # 未知 mode：与旧 CLI 行为一致，整体作为 raw 关键词
-    if mode not in _VALID_MODES:
-        query = " ".join(p for p in (mode, query) if p).strip()
-        mode = "raw"
+    # 未知 action：与旧 CLI 行为一致，整体作为 raw 关键词
+    if action not in _VALID_MODES:
+        query = " ".join(p for p in (action, query) if p).strip()
+        action = "raw"
 
-    if mode == "quota":
+    if action == "quota":
         return ok({"quota": _QUOTA})
 
     if not query:
-        return error(f"缺少 query（mode={mode} 需要关键词）", code="missing_argument")
+        return error(f"缺少 query（action={action} 需要关键词）", code="missing_argument")
 
     try:
-        if mode == "raw":
+        if action == "raw":
             return ok(_raw(query))
-        if mode == "summary":
+        if action == "summary":
             return ok(_summary(query))
-        if mode == "search":
+        if action == "search":
             return ok(_search(query))
-        if mode == "baike":
+        if action == "baike":
             out = _baike(query)
             return ok(out) if out else error(f"未找到词条「{query}」", code="not_found")
-        if mode == "baikelist":
+        if action == "baikelist":
             out = _baikelist(query)
             return ok(out) if out else error(f"未找到词条「{query}」", code="not_found")
     except Exception as e:
         return error(f"百度搜索失败 - {e}", code="search_failed")
-    return error(f"未知 mode '{mode}'", code="unknown_action")
+    return error(f"未知 action '{action}'", code="unknown_action")

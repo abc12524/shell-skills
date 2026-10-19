@@ -2,16 +2,16 @@
 # description: Stage1st（S1 / Discuz!）论坛浏览：版块列表 / 帖子列表 / 帖子内容 / 登录 / 回复
 # status: enable
 # usage:
-#   arguments.cmd = forums | threads | posts | login | reply（默认 forums）
+#   arguments.action = forums | threads | posts | login | reply（默认 forums）
 #     forums                      列出全部版块分类与版块
 #     threads  arguments.fid      列某版块帖子；可选 arguments.page / arguments.type
 #     posts    arguments.tid      看帖子内容；可选 arguments.page / arguments.last
 #     login    arguments.username / arguments.password（缺省读 S1_USERNAME / S1_PASSWORD）
 #     reply    arguments.tid / arguments.message（需登录，缺省用 S1_USERNAME / S1_PASSWORD 登录）
-#   示例: {"cmd": "forums"}
-#   示例: {"cmd": "threads", "fid": "4", "page": 1}
-#   示例: {"cmd": "posts", "tid": "1234567", "last": 3}
-#   示例: {"cmd": "reply", "tid": "1234567", "message": "回复内容"}
+#   示例: {"action": "forums"}
+#   示例: {"action": "threads", "fid": "4", "page": 1}
+#   示例: {"action": "posts", "tid": "1234567", "last": 3}
+#   示例: {"action": "reply", "tid": "1234567", "message": "回复内容"}
 #   常用版块 fid: 归墟=157  动漫论坛=6  ＰＣ数码=51
 #
 # 配置：账号/主机读取环境变量（同目录 config.json，模板见 config.example.json）。
@@ -349,7 +349,7 @@ def _do_forums(client):
 def _do_threads(client, a):
     fid = str(a.get("fid") or "").strip()
     if not fid:
-        return error("cmd=threads 需要 fid", code="missing_argument")
+        return error("action=threads 需要 fid", code="missing_argument")
     page = _as_int(a.get("page"), 1)
     type_id = a.get("type")
     threads, page, total_pages, thread_types = client.get_threads(fid, page, type_id)
@@ -375,7 +375,7 @@ def _do_threads(client, a):
 def _do_posts(client, a):
     tid = str(a.get("tid") or "").strip()
     if not tid:
-        return error("cmd=posts 需要 tid", code="missing_argument")
+        return error("action=posts 需要 tid", code="missing_argument")
     page = _as_int(a.get("page"), 1)
     last = _as_int(a.get("last"), 0)
 
@@ -429,7 +429,7 @@ def _do_reply(client, a):
     tid = str(a.get("tid") or "").strip()
     message = a.get("message")
     if not tid or not message:
-        return error("cmd=reply 需要 tid 与 message", code="missing_argument")
+        return error("action=reply 需要 tid 与 message", code="missing_argument")
     username = a.get("username") or os.environ.get("S1_USERNAME")
     password = a.get("password") or os.environ.get("S1_PASSWORD")
     if not client.is_logged_in:
@@ -445,21 +445,21 @@ def run(arguments):
     """skill 入口：arguments(dict) → ok()/error() 信封。"""
     a = arguments or {}
     _load_config()
-    cmd = str(a.get("cmd") or "forums").strip().lower()
+    action = str(a.get("action") or "forums").strip().lower()
 
     try:
         client = S1Client(host=os.environ.get("S1_HOST") or DEFAULT_HOST)
-        if cmd == "forums":
+        if action == "forums":
             return _do_forums(client)
-        if cmd == "threads":
+        if action == "threads":
             return _do_threads(client, a)
-        if cmd == "posts":
+        if action == "posts":
             return _do_posts(client, a)
-        if cmd == "login":
+        if action == "login":
             return _do_login(client, a)
-        if cmd == "reply":
+        if action == "reply":
             return _do_reply(client, a)
-        return error(f"未知 cmd '{cmd}'，可用: forums / threads / posts / login / reply",
+        return error(f"未知 action '{action}'，可用: forums / threads / posts / login / reply",
                      code="unknown_action")
     except S1Error as e:
         return error(str(e), code="s1_error")

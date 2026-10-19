@@ -4,7 +4,7 @@
 # usage:
 #   arguments.query = 搜索关键词（必填，1~100 字符，不支持多词）
 #   arguments.count = 返回条数，默认 5；web 上限 50、image 上限 5，global 服务端恒返 10 条、由本地按 count 截断
-#   arguments.api = web（默认，web_search）| global（global_search）
+#   arguments.action = web（默认，web_search）| global（global_search）
 #   arguments.search_type = 搜索类型，默认 web（web | image）
 #   arguments.need_content = true|false，服务端过滤：只返回有正文的结果，默认 false
 #   arguments.include_content = true|false，结果里是否带正文字段 content，默认 false（正文可达上万字符，慎开）
@@ -241,17 +241,17 @@ def run(arguments):
     if not query:
         return error("缺少必填参数 query", code="missing_argument")
 
-    api = (a.get("api") or "web").strip().lower()
-    if api not in ENDPOINTS:
+    action = (a.get("action") or "web").strip().lower()
+    if action not in ENDPOINTS:
         return error(
-            f"未知 api '{api}'，可用: {', '.join(ENDPOINTS)}", code="bad_request"
+            f"未知 action '{action}'，可用: {', '.join(ENDPOINTS)}", code="bad_request"
         )
 
     try:
         results = search(
             query,
             count=_as_int(a.get("count", 5), 5),
-            api=api,
+            api=action,
             search_type=a.get("search_type", "web"),
             need_content=_as_bool(a.get("need_content"), False),
             include_content=_as_bool(a.get("include_content"), False),
@@ -277,7 +277,7 @@ def run(arguments):
     except RuntimeError as exc:
         return error(str(exc), code="api_error")
 
-    return ok({"query": query, "api": api, "count": len(results), "results": results})
+    return ok({"query": query, "api": action, "count": len(results), "results": results})
 
 
 if __name__ == "__main__":

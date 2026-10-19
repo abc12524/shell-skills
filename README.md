@@ -52,6 +52,11 @@ shell-skills/
 - 脚本定义模块级 `def run(arguments: dict) -> str`，返回统一信封
   （`{"status":"ok","result":{...}}` / `{"status":"error",...}`）。信封的构造见下节
   「信封导入」——需兼容 shell-tool 与移动端两种运行时。
+- **操作选择器统一用 `action`**：需要区分多个操作的技能，一律使用
+  `arguments.action`（如 `{"action": "list"}`）；不再使用 `cmd` / `mode` / `api`
+  等别名。单一功能技能可省略选择器，直接传业务参数。
+- **参数命名统一为小写 `snake_case`**；布尔值用 JSON `true` / `false`，
+  数组用于多值参数（如 `paths` / `keys` / `args`）。
 - **助手模块**以 `_` 开头（如 `_script_impl.py`），不会被注册；入口用相对导入引用：
   `from ._script_impl import ...`。
 - **配置与脚本同目录**：技能需要的密钥/参数写在同目录 `config.json`（键为环境变量名）：
