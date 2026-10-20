@@ -125,6 +125,16 @@
       "config": ["OPENVIKING_URL", "OPENVIKING_KEY", "OPENVIKING_USER", "OPENVIKING_AGENT", "OV_SEARCH_THRESHOLD", "OV_SEARCH_LIMIT", "OV_FIND_THRESHOLD", "OV_FIND_LIMIT"]
     },
     {
+      "name": "qbittorrent",
+      "description": "qBittorrent 下载管理：新建 / 列表（Markdown）/ 详情 / 暂停 / 继续 / 删除（可连同文件）",
+      "platform": ["linux", "windows", "android", "ios"],
+      "path": "qbittorrent",
+      "entry": "skill.py",
+      "version": "1.0.0",
+      "requires": ["requests"],
+      "config": ["QBIT_URL", "QBIT_HOST", "QBIT_PORT", "QBIT_USERNAME", "QBIT_PASSWORD", "QBIT_API_KEY"]
+    },
+    {
       "name": "s1",
       "description": "Stage1st（S1/Discuz!）论坛浏览：版块列表 / 帖子列表 / 帖子内容 / 登录 / 回复",
       "platform": ["linux", "windows", "android", "ios"],

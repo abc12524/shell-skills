@@ -25,6 +25,7 @@ shell-skills/
 ├── nga/                NGA 论坛浏览（分类 / 帖子 / 回复 / 搜索 / 登录）
 ├── objstore/           对象存储（S3 兼容）：上传 / 下载 / 删除 / 列表 / 复制 / 预签名
 ├── ov/                 OpenViking 外置记忆统一入口（搜索 / 写入 / 读取 / 遗忘）
+├── qbittorrent/        qBittorrent 下载管理（新建 / 列表 / 详情 / 暂停 / 继续 / 删除）
 ├── s1/                 Stage1st 论坛浏览（版块 / 帖子 / 回复 / 登录）
 ├── script/             脚本/代码增删改查 + 结构骨架
 ├── skill_guide/        如何编写 skill：规范、要求与示例（内置 skill_README.md）
