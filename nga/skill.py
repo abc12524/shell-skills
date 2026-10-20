@@ -2,20 +2,15 @@
 # description: NGA 论坛（bbs.nga.cn）浏览：版块分类 / 版块帖子列表 / 帖子回复 / 版块搜索 / 登录
 # status: enable
 # usage:
-#   arguments.action = categories | threads | read | search | login（默认 categories）
-#     categories                     列出全部版块分类与子版块（含 fid/stid）
-#     threads  arguments.fid         列版块帖子；可选 arguments.page / arguments.stid
-#     read     arguments.tid         看帖子回复；可选 arguments.page
-#     search   arguments.keyword     按关键词搜索版块
-#     login    arguments.cookie      保存登录 Cookie（缺省读 NGA_COOKIE）
-#   示例: {"action": "categories"}
-#   示例: {"action": "threads", "fid": 436, "page": 1}
-#   示例: {"action": "read", "tid": 46826141}
-#   示例: {"action": "search", "keyword": "晴风村"}
-#
-# 配置：域名/Cookie 读取环境变量（同目录 config.json，模板见 config.example.json）。
-#   NGA_DOMAIN / NGA_COOKIE / NGA_INSECURE / NGA_COOKIE_FILE
-# 依赖：requests。
+#   action = forums（默认）| threads | posts | search | login
+#   forums  keyword 可选；按板块名查询，缺省显示分类概览
+#   threads fid 必填；可选 page / stid
+#   posts   tid 必填；可选 page
+#   search  keyword 必填
+#   login   cookie（缺省读 NGA_COOKIE）
+#   输出为 Markdown 文本（result.text）
+#   示例: {"action": "posts", "tid": 46826141}
+#   配置: NGA_DOMAIN / NGA_COOKIE / NGA_INSECURE / NGA_COOKIE_FILE；依赖 requests
 """NGA 论坛浏览 skill。"""
 import json
 import os
@@ -29,6 +24,7 @@ try:  # android-agent / kelivo-agent：技能目录部署了 _envelope.py
 except ImportError:  # shell-tool：使用 core.tools.envelope
     from core.tools.envelope import ok, error
 
+FORUMS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "forums.json")
 DEFAULT_DOMAIN = "https://bbs.nga.cn"
 DEFAULT_COOKIE_FILE = os.path.join(os.path.expanduser("~"), ".nga_cookies.json")
 DOMAINS = [
@@ -120,10 +116,6 @@ class NGAClient:
                 except requests.exceptions.SSLError:
                     continue
             raise
-
-    def get_categories(self):
-        raw = self._get(f"{self.domain}/app_api.php", {"__lib": "home", "__act": "category"})
-        return _loads_tolerant(raw)[0]
 
     def get_forum_topics(self, fid, page=1, stid=None):
         params = {"page": page, "lite": "js", "noprefix": ""}
@@ -252,19 +244,73 @@ def _clean_subject(subject):
 
 
 # ============= 命令 =============
-def _do_categories(client):
-    data = client.get_categories()
-    if data.get("code") != 0:
-        return error(f"接口错误: {data.get('msg', 'unknown')}", code="nga_error")
-    lines = []
-    for cat in data.get("result", []):
-        lines += ["=" * 60, f"  {cat['name']}", "=" * 60]
-        for group in cat.get("groups", []):
-            lines.append(f"\n  > {group['name']}")
-            for forum in group.get("forums", []):
-                tag = f"stid={forum['stid']}" if forum.get("stid") else f"fid={forum['id']}"
-                lines.append(f"    {forum['name']:30s} {tag}")
-    return ok({"categories": data.get("result", []), "text": "\n".join(lines)})
+_FORUMS_CACHE = None
+
+
+def _load_forums():
+    global _FORUMS_CACHE
+    if _FORUMS_CACHE is not None:
+        return _FORUMS_CACHE
+    try:
+        with open(FORUMS_FILE, encoding="utf-8") as f:
+            data = json.load(f)
+        _FORUMS_CACHE = data if isinstance(data, list) else []
+    except (OSError, ValueError):
+        _FORUMS_CACHE = []
+    return _FORUMS_CACHE
+
+
+def _forum_tag(forum):
+    if forum.get("stid"):
+        return f"stid={forum['stid']}"
+    return f"fid={forum.get('fid')}"
+
+
+def _do_forums(client, a):
+    forums = _load_forums()
+    if not forums:
+        return error("版块数据缺失（forums.json）", code="io_error")
+    keyword = str(a.get("keyword") or "").strip()
+    if not keyword:
+        counts = {}
+        for forum in forums:
+            category = forum.get("category") or "未分类"
+            counts[category] = counts.get(category, 0) + 1
+        lines = [f"# NGA 版块（共 {len(forums)} 个）", "",
+                 "传入 keyword 查询具体版块，如 {\"action\": \"forums\", \"keyword\": \"晴风村\"}", ""]
+        for category, count in counts.items():
+            lines.append(f"- {category}：{count} 个")
+        return ok({"count": len(forums),
+                   "categories": [{"name": k, "count": v} for k, v in counts.items()],
+                   "text": "\n".join(lines)})
+
+    lower = keyword.lower()
+    exact, prefix, contains = [], [], []
+    for forum in forums:
+        name = (forum.get("name") or "").lower()
+        if name == lower:
+            exact.append(forum)
+        elif name.startswith(lower):
+            prefix.append(forum)
+        elif lower in name:
+            contains.append(forum)
+    matches = exact + prefix + contains
+    if not matches:
+        return ok({"keyword": keyword, "count": 0, "forums": [],
+                   "text": f"未找到匹配「{keyword}」的版块"})
+
+    limit = _as_int(a.get("limit"), 20)
+    shown = matches[:limit]
+    lines = ["| 版块 | ID | 分类 | 分组 |", "| --- | --- | --- | --- |"]
+    for forum in shown:
+        lines.append("| %s | %s | %s | %s |" % (
+            forum.get("name", ""), _forum_tag(forum),
+            forum.get("category", ""), forum.get("group", "")))
+    if len(matches) > len(shown):
+        lines.append("")
+        lines.append(f"（共 {len(matches)} 个匹配，仅显示前 {len(shown)} 个）")
+    return ok({"keyword": keyword, "count": len(matches), "forums": shown,
+               "text": "\n".join(lines)})
 
 
 def _do_threads(client, a):
@@ -302,10 +348,10 @@ def _do_threads(client, a):
                "threads": items, "text": "\n".join(lines)})
 
 
-def _do_read(client, a):
+def _do_posts(client, a):
     tid = a.get("tid")
     if tid in (None, ""):
-        return error("action=read 需要 tid", code="missing_argument")
+        return error("action=posts 需要 tid", code="missing_argument")
     page = _as_int(a.get("page"), 1)
     data = client.read_topic(tid, page)
     if "error" in data:
@@ -402,24 +448,24 @@ def run(arguments):
     """skill 入口：arguments(dict) → ok()/error() 信封。"""
     a = arguments or {}
     _load_config()
-    action = str(a.get("action") or "categories").strip().lower()
+    action = str(a.get("action") or "forums").strip().lower()
 
     domain = os.environ.get("NGA_DOMAIN") or DEFAULT_DOMAIN
     insecure = _truthy(a.get("insecure")) or _truthy(os.environ.get("NGA_INSECURE"))
     client = NGAClient(domain=domain, insecure=insecure)
 
     try:
-        if action == "categories":
-            return _do_categories(client)
+        if action == "forums":
+            return _do_forums(client, a)
         if action == "threads":
             return _do_threads(client, a)
-        if action == "read":
-            return _do_read(client, a)
+        if action == "posts":
+            return _do_posts(client, a)
         if action == "search":
             return _do_search(client, a)
         if action == "login":
             return _do_login(client, a)
-        return error(f"未知 action '{action}'，可用: categories / threads / read / search / login",
+        return error(f"未知 action '{action}'，可用: forums / threads / posts / search / login",
                      code="unknown_action")
     except requests.exceptions.RequestException as e:
         return error(f"网络请求失败: {e}", code="network_error")
