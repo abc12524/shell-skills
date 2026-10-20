@@ -95,16 +95,6 @@
       "config": ["MAIL_PROVIDER", "MAIL_USER", "MAIL_PASS", "MAIL_CA_BUNDLE"]
     },
     {
-      "name": "news",
-      "description": "查询 MySQL 新闻库：早报/晚报/热榜（今日）与关键词检索",
-      "platform": ["linux", "windows", "android", "ios"],
-      "path": "news",
-      "entry": "skill.py",
-      "version": "1.0.0",
-      "requires": ["pymysql"],
-      "config": ["MYSQL_HOST", "MYSQL_PORT", "MYSQL_USER", "MYSQL_PASSWORD", "MYSQL_DB"]
-    },
-    {
       "name": "nga",
       "description": "NGA 论坛（bbs.nga.cn）浏览：版块分类 / 帖子列表 / 帖子回复 / 版块搜索 / 登录",
       "platform": ["linux", "windows", "android", "ios"],

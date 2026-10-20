@@ -8,3 +8,6 @@ __pycache__/
 *.pyc
 .storage_audit/
 .DS_Store
+
+# news 技能仅在本地/Gitea 提供，不入 GitHub
+news/
