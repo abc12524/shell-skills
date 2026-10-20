@@ -5,6 +5,16 @@
   "platforms": ["linux", "windows", "android", "ios"],
   "skills": [
     {
+      "name": "aria2",
+      "description": "aria2 下载管理：新建 / 列表（Markdown）/ 详情 / 暂停 / 继续 / 删除",
+      "platform": ["linux", "windows", "android", "ios"],
+      "path": "aria2",
+      "entry": "skill.py",
+      "version": "1.0.0",
+      "requires": ["requests"],
+      "config": ["ARIA2_RPC_URL", "ARIA2_SECRET"]
+    },
+    {
       "name": "at",
       "description": "定时任务管理（创建 / 查看 / 删除到点执行一次的命令）",
       "platform": ["linux", "windows"],
@@ -193,6 +203,16 @@
       "version": "1.0.1",
       "requires": [],
       "config": []
+    },
+    {
+      "name": "transmission",
+      "description": "Transmission 下载管理：新建 / 列表（Markdown）/ 详情 / 暂停 / 继续 / 删除（可连同文件）",
+      "platform": ["linux", "windows", "android", "ios"],
+      "path": "transmission",
+      "entry": "skill.py",
+      "version": "1.0.0",
+      "requires": ["requests"],
+      "config": ["TR_URL", "TR_HOST", "TR_PORT", "TR_USERNAME", "TR_PASSWORD"]
     },
     {
       "name": "tplink_ptz",

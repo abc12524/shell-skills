@@ -13,6 +13,7 @@
 shell-skills/
 ├── index.json          # 根索引：技能名 + 说明（shell-tool 据此列出可选技能）
 ├── README.md
+├── aria2/              aria2 下载管理（新建 / 列表 / 详情 / 暂停 / 继续 / 删除）
 ├── at/                 定时任务管理（创建 / 查看 / 删除到点执行一次的命令）
 ├── baidu_search/       百度搜索 / 百科查询
 ├── deepseek_search/    DeepSeek 网页搜索 / 抓取（官方自研搜索引擎）
@@ -32,6 +33,7 @@ shell-skills/
 ├── smb/                SMB/CIFS 文件传输（smbprotocol：上传 / 下载 / 删除 / 列表）
 ├── storage_audit/      手机存储审计（分区容量 / 大文件 / 目录与类型排行 / 回收站清理）
 ├── timestamp/          时间戳转换（当前时间 / 时间戳↔日期，支持时区与格式）
+├── transmission/       Transmission 下载管理（新建 / 列表 / 详情 / 暂停 / 继续 / 删除）
 ├── tplink_ptz/         TP-Link 摄像头 PTZ 云台控制
 ├── volc_balance/       火山引擎账户余额查询
 ├── wait/               等待指定秒数（最长 600 秒）
