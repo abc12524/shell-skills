@@ -123,6 +123,18 @@ def _pad_blank(lines: List[str], at: int, text: str, next_is_def: bool = False) 
     return text
 
 
+def _pad_block(prev: str, text: str, nxt: str) -> str:
+    """按 _pad_blank 语义，用插入点前后行文本给整块内容补空行"""
+    if not text.strip():
+        return text
+    text = text.rstrip("\n")
+    if _def_like(text) and prev.strip():
+        text = "\n" + text
+    if _def_like(nxt):
+        text = text + "\n\n"
+    return text
+
+
 def _body_indent(lines: List[str], sym: SymbolRange) -> str:
     """取符号体的缩进（首个非空体行）；无体则退化为符号缩进 + 4 空格"""
     for i in range(sym.body_start, min(sym.body_end, len(lines)) + 1):
@@ -165,19 +177,23 @@ def _closest_lines(code: str, old_code: str, top: int = 3):
 
 _NOT_FOUND_MSG = "old_code 未找到（已按精确、忽略缩进、忽略标点三级匹配）"
 
-# 标点归一表：只统一「书写风格」类差异（引号/反引号/语句分隔符/路径斜杠）
-_NORM_TRANS = str.maketrans({"'": '"', "`": '"', ";": ",", "\\": "/"})
+# 标点归一表：只统一「书写风格」类差异（引号/反引号/路径斜杠）
+_NORM_TRANS = str.maketrans({"'": '"', "`": '"', "\\": "/"})
+_PUNCT_SPACE_RE = re.compile(r"\s*([,;:()\[\]{}])\s*")
+_TRAILING_SEMI_RE = re.compile(r";+\s*$")
 
 
 def _line_key(line: str, level: str) -> str:
-    """匹配用行指纹：stripped 去首尾空白；normalized 再统一引号/分隔符并压缩空白。
+    """匹配用行指纹：stripped 去首尾空白；normalized 再统一引号/标点空白与行尾分号。
 
     normalized 不动运算符与标识符 —— `x + 2` 与 `x * 2` 不会被当成同一行（否则会改错代码）。
     """
     text = line.strip()
     if level == "stripped":
         return text
-    return re.sub(r"\s+", " ", text.translate(_NORM_TRANS))
+    text = re.sub(r"\s+", " ", text.translate(_NORM_TRANS))
+    text = _TRAILING_SEMI_RE.sub("", text)
+    return _PUNCT_SPACE_RE.sub(r"\1", text)
 
 
 def _fuzzy_hits(lines: List[str], old_code: str):
@@ -259,7 +275,10 @@ def _fuzzy_add(code: str, old_code: str, new_code: str, replace_all: bool, befor
     picked = hits if replace_all else hits[:1]
     out, pos = [], 0
     for i, j in picked:
-        block = _reindent(new_code, lines[i], old_code, unit).split("\n")
+        text = _reindent(new_code, lines[i], old_code, unit)
+        text = _pad_block(lines[i - 1] if i > 0 else "", text,
+                          lines[j + 1] if j + 1 < len(lines) else "")
+        block = text.split("\n")
         if before:
             out.extend(lines[pos:i])
             out.extend(block)
@@ -327,6 +346,7 @@ def _add_after(code: str, anchor: str, new_code: str, replace_all: bool, before:
                unit: str = "    "):
     """在 anchor 之后（或之前）按行边界插入 new_code。
 
+    行边界插入时按 _pad_blank 规则补空行，与 symbol 定位行为一致。
     返回 (new_src, count, err, err_code, meta)；精确未命中时退化为按行模糊匹配。
     """
     count = code.count(anchor)
@@ -339,19 +359,40 @@ def _add_after(code: str, anchor: str, new_code: str, replace_all: bool, before:
 
     body = _prepare(new_code, re.match(r"[ \t]*", anchor).group(0), unit)
 
-    def seg(prev_char: str, next_char: str) -> str:
+    def padded(at: int) -> str:
+        """行边界插入时按 _pad_blank 规则补空行；非行边界保持原样"""
+        if before:
+            if at != 0 and code[at - 1] != "\n":
+                return body
+            head = code[:at]
+            nxt = code[at:].split("\n", 1)[0]
+        else:
+            if at < len(code) and code[at] != "\n" and code[at - 1] != "\n":
+                return body
+            head = code[:at]
+            if at >= len(code):
+                nxt = ""
+            elif code[at] == "\n":
+                nxt = code[at + 1:].split("\n", 1)[0]
+            else:                           # anchor 自身以换行结尾，插入点在行首
+                nxt = code[at:].split("\n", 1)[0]
+        prev = (head[:-1] if head.endswith("\n") else head).rsplit("\n", 1)[-1] if head else ""
+        return _pad_block(prev, body, nxt)
+
+    def seg(at: int, prev_char: str, next_char: str) -> str:
+        text = padded(at)
         out = ""
         if not before:
-            if not anchor.endswith("\n") and not body.startswith("\n"):
+            if not anchor.endswith("\n"):
                 out += "\n"
-            out += body
-            if not body.endswith("\n") and next_char != "\n":
+            out += text
+            if not text.endswith("\n") and next_char != "\n":
                 out += "\n"
         else:
-            if not body.endswith("\n") and not anchor.startswith("\n"):
-                out += body + "\n"
+            if not text.endswith("\n") and not anchor.startswith("\n"):
+                out += text + "\n"
             else:
-                out += body
+                out += text
         return out
 
     out: List[str] = []
@@ -366,7 +407,7 @@ def _add_after(code: str, anchor: str, new_code: str, replace_all: bool, before:
         if before:
             out.append(code[pos:idx])
             if replace_all or inserted == 0:
-                out.append(seg(code[idx - 1:idx], anchor[:1]))
+                out.append(seg(idx, code[idx - 1:idx], anchor[:1]))
                 inserted += 1
             out.append(anchor)
             if not replace_all:
@@ -376,7 +417,7 @@ def _add_after(code: str, anchor: str, new_code: str, replace_all: bool, before:
             continue
         out.append(code[pos:end])
         if replace_all or inserted == 0:
-            out.append(seg(code[end - 1:end], code[end:end + 1]))
+            out.append(seg(end, code[end - 1:end], code[end:end + 1]))
             inserted += 1
             if not replace_all:
                 out.append(code[end:])
