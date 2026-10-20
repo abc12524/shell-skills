@@ -3,36 +3,30 @@
 # usage:
 #   arguments.text = 直接输入的文本（与 file_path 二选一）
 #   arguments.file_path = 文件路径（优先于 text）
-#   arguments.encoding / add_special_tokens / return_tokens = 可选
+#   arguments.encoding = 文件编码（可选，默认自动探测：utf-8-sig → gb18030）
 #   示例: {"text": "Hello!"}
 #   示例: {"file_path": "path/to/file.txt"}
 import json
 import os
-from functools import lru_cache
 
 try:
     from _envelope import ok, error
 except ImportError:
     from core.tools.envelope import ok, error
 
-SKILL_DIR = os.path.dirname(os.path.abspath(__file__))
-DEFAULT_TOKENIZER = os.path.join(SKILL_DIR, "tokenizer.json")
+try:
+    from ._tokenizer import count_tokens, DEFAULT_TOKENIZER
+except ImportError:
+    from _tokenizer import count_tokens, DEFAULT_TOKENIZER
+
 FALLBACK_ENCODINGS = ("utf-8-sig", "gb18030")
 
 
-def _tokenizer_path():
-    return (os.environ.get("TOKEN_COUNT_TOKENIZER")
+def _tokenizer_name():
+    path = (os.environ.get("TOKEN_COUNT_TOKENIZER")
             or os.environ.get("TOKENIZER_PATH")
             or DEFAULT_TOKENIZER)
-
-
-@lru_cache(maxsize=1)
-def _tokenizer():
-    from tokenizers import Tokenizer
-    path = _tokenizer_path()
-    if not os.path.isfile(path):
-        raise RuntimeError(f"tokenizer 文件不存在: {path}")
-    return Tokenizer.from_file(path)
+    return os.path.basename(path)
 
 
 def _read_file(path, encoding=None):
@@ -46,14 +40,6 @@ def _read_file(path, encoding=None):
         except UnicodeDecodeError:
             continue
     return data.decode("utf-8", errors="replace"), "utf-8(replace)"
-
-
-def _as_bool(value, default=False):
-    if value is None:
-        return default
-    if isinstance(value, bool):
-        return value
-    return str(value).strip().lower() in ("1", "true", "yes", "on")
 
 
 def run(arguments):
@@ -87,27 +73,21 @@ def run(arguments):
     elif text is None:
         text = ""
 
-    add_special = _as_bool(a.get("add_special_tokens"), False)
-    return_tokens = _as_bool(a.get("return_tokens"), False)
-
     try:
-        enc = _tokenizer().encode(text, add_special_tokens=add_special)
+        tokens = count_tokens(text)
     except Exception as exc:
         return error(f"token 计算失败: {exc}", code="internal")
 
     result = {
-        "tokens": len(enc.ids),
+        "tokens": tokens,
         "characters": len(text),
         "source": source,
-        "tokenizer": os.path.basename(_tokenizer_path()),
+        "tokenizer": _tokenizer_name(),
     }
     if file_path:
         result["path"] = os.path.abspath(os.path.expanduser(file_path))
         result["encoding"] = encoding
         result["bytes"] = os.path.getsize(result["path"])
-    if return_tokens:
-        result["ids"] = enc.ids
-        result["token_texts"] = enc.tokens
     return ok(result)
 
 

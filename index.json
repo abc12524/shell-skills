@@ -206,12 +206,12 @@
     },
     {
       "name": "token_count",
-      "description": "DeepSeek V4 token 计数（直接文本 / 文件路径，内置 tokenizer）",
+      "description": "DeepSeek V4 token 计数（直接文本 / 文件路径，纯 Python 实现）",
       "platform": ["linux", "windows", "android", "ios"],
       "path": "token_count",
       "entry": "skill.py",
-      "version": "1.0.0",
-      "requires": ["tokenizers"],
+      "version": "1.1.0",
+      "requires": [],
       "config": []
     },
     {
