@@ -6,4 +6,5 @@ tplink.conf
 
 __pycache__/
 *.pyc
+.storage_audit/
 .DS_Store

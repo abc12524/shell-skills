@@ -175,6 +175,16 @@
       "config": ["SMB_HOST", "SMB_SHARE", "SMB_USERNAME", "SMB_PASSWORD", "SMB_DOMAIN", "SMB_PORT"]
     },
     {
+      "name": "storage_audit",
+      "description": "手机存储审计：容量 / 最大文件 / 目录与类型排行 / 回收站清理",
+      "platform": ["android"],
+      "path": "storage_audit",
+      "entry": "skill.py",
+      "version": "1.0.0",
+      "requires": [],
+      "config": []
+    },
+    {
       "name": "timestamp",
       "description": "时间戳转换（当前时间 / 时间戳转日期 / 日期转时间戳，支持时区与自定义格式）",
       "platform": ["linux", "windows", "android", "ios"],
