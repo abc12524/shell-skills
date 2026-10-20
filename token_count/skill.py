@@ -1,12 +1,11 @@
 # skill: token_count
 # description: 统计 DeepSeek V4 token 数（直接文本或文件）
 # usage:
-#   arguments.action = count（默认）
 #   arguments.text = 直接输入的文本（与 file_path 二选一）
 #   arguments.file_path = 文件路径（优先于 text）
 #   arguments.encoding / add_special_tokens / return_tokens = 可选
-#   示例: {"action": "count", "text": "Hello!"}
-#   示例: {"action": "count", "file_path": "path/to/file.txt"}
+#   示例: {"text": "Hello!"}
+#   示例: {"file_path": "path/to/file.txt"}
 import json
 import os
 from functools import lru_cache
@@ -61,10 +60,6 @@ def run(arguments):
     a = arguments or {}
     if not isinstance(a, dict):
         return error("arguments 必须是对象", code="bad_request")
-
-    action = str(a.get("action") or "count").strip().lower()
-    if action != "count":
-        return error(f"未知 action '{action}'", code="unknown_action")
 
     file_path = a.get("file_path")
     has_text = "text" in a
