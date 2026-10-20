@@ -9,7 +9,7 @@
 #     search   arguments.keyword     按关键词搜索版块
 #     login    arguments.cookie      保存登录 Cookie（缺省读 NGA_COOKIE）
 #   示例: {"action": "categories"}
-#   示例: {"action": "threads", "fid": 650, "page": 1}
+#   示例: {"action": "threads", "fid": 436, "page": 1}
 #   示例: {"action": "read", "tid": 46826141}
 #   示例: {"action": "search", "keyword": "晴风村"}
 #
