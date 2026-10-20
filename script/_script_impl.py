@@ -65,7 +65,11 @@ def script_editor(action: str = None, file_path: str = None, url: str = None,
     - add     : 插入 new_code，定位优先级 symbol > start_line > old_code > 文件末尾
     - edit    : 替换，定位优先级 symbol > start_line > old_code
     - delete  : 删除，定位优先级 symbol > start_line > old_code
-    position（配合 symbol）：start | end | before | after（add 默认 end，其余默认整体）
+    position（配合 symbol）：add 支持 start | end（符号体内首/末，默认 end）| before | after；
+    edit 仅支持 before | after，省略 position 即整段替换符号（start/end 会报错，
+    要往符号体内插内容请用 add）；delete 忽略 position。
+    `@n:` 缩进相对「插入基准缩进」（add 到符号体时为体缩进，@0 = 基准层，@1 = 深一层）：
+    用了 @n: 的行不要再写字面缩进，层级统一由 @n 表达。
     写入动作默认回显 unified diff；dry_run=true 只预览不落盘。
     """
     act = (action or "").strip().lower()
@@ -231,6 +235,15 @@ def script_editor(action: str = None, file_path: str = None, url: str = None,
 
     if act == "edit":
         if sym is not None:
+            if pos not in ("", "before", "after"):
+                if pos in ("start", "end"):
+                    return error(
+                        f"edit+symbol 不支持 position='{position}'：省略 position 表示整段替换符号，"
+                        "前后插入用 before/after；往符号体内插内容请用 add",
+                        code="invalid_argument")
+                return error(
+                    f"position 非法 '{position}'（edit+symbol 仅支持 before/after）",
+                    code="invalid_argument")
             s, e = sym.start, sym.end
             body = _prepare(new_code, sym.indent, unit)
             if pos == "before":

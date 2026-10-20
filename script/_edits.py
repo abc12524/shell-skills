@@ -60,7 +60,11 @@ def _indent_unit(lines: List[str]) -> str:
 
 
 def _apply_rel_indents(new_code: str, base: str, unit: str) -> str:
-    """把 `@n:` 换算成 base + n*unit；无标记的行原样保留（视为已对齐到 base）"""
+    """把 `@n:` 换算成 base + n*unit；无标记的行原样保留（视为已对齐到 base）。
+
+    base 是插入点的基准缩进（add 到符号体时为体缩进），因此 @0 = 基准层、@1 = 深一层。
+    标记后的内容会原样拼接，再写字面缩进属于额外缩进（会叠加）；层级请统一用 @n 表达。
+    """
     out = []
     for line in (new_code or "").split("\n"):
         m = _REL_INDENT_RE.match(line)
