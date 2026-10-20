@@ -205,6 +205,16 @@
       "config": []
     },
     {
+      "name": "token_count",
+      "description": "DeepSeek V4 token 计数（直接文本 / 文件路径，内置 tokenizer）",
+      "platform": ["linux", "windows", "android", "ios"],
+      "path": "token_count",
+      "entry": "skill.py",
+      "version": "1.0.0",
+      "requires": ["tokenizers"],
+      "config": []
+    },
+    {
       "name": "transmission",
       "description": "Transmission 下载管理：新建 / 列表（Markdown）/ 详情 / 暂停 / 继续 / 删除（可连同文件）",
       "platform": ["linux", "windows", "android", "ios"],

@@ -33,6 +33,7 @@ shell-skills/
 ├── smb/                SMB/CIFS 文件传输（smbprotocol：上传 / 下载 / 删除 / 列表）
 ├── storage_audit/      手机存储审计（分区容量 / 大文件 / 目录与类型排行 / 回收站清理）
 ├── timestamp/          时间戳转换（当前时间 / 时间戳↔日期，支持时区与格式）
+├── token_count/        DeepSeek V4 token 计数（直接文本 / 文件路径，内置 tokenizer）
 ├── transmission/       Transmission 下载管理（新建 / 列表 / 详情 / 暂停 / 继续 / 删除）
 ├── tplink_ptz/         TP-Link 摄像头 PTZ 云台控制
 ├── volc_balance/       火山引擎账户余额查询
