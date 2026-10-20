@@ -33,8 +33,8 @@ from ._symbols import (  # noqa: F401
 )
 from ._edits import (  # noqa: F401
     _DEF_LIKE_RE, _add_after, _auto_indent, _body_indent, _closest_lines, _create_file,
-    _def_like, _finish, _hint_msg, _indent_unit, _insert_at_line, _multi_msg, _pad_blank,
-    _prepare, _replace, _replace_lines,
+    _def_gap, _def_like, _finish, _hint_msg, _indent_unit, _insert_at_line, _multi_msg,
+    _pad_blank, _prepare, _replace, _replace_lines,
 )
 from ._views import (  # noqa: F401
     _emit_matches, _emit_range, _emit_symbols, _parse_or_fail, _read, _resolve_symbols,
@@ -52,7 +52,8 @@ def script_editor(action: str = None, file_path: str = None, url: str = None,
                   language: str = None, symbol=None, pattern: str = None,
                   start_line: int = None, end_line: int = None, limit: int = DEFAULT_LIMIT,
                   old_code: str = None, new_code: str = None, replace_all: bool = False,
-                  dry_run: bool = False, position: str = None, with_calls: bool = False) -> str:
+                  dry_run: bool = False, position: str = None, with_calls: bool = False,
+                  diff_context: int = None) -> str:
     """脚本编辑 + 结构化读取工具（对齐 OpenViking / DSH 规范信封）。
 
     数据来源（二选一）：file_path（本地文件，可写）或 url（http/https，只读）。
@@ -71,6 +72,7 @@ def script_editor(action: str = None, file_path: str = None, url: str = None,
     `@n:` 缩进相对「插入基准缩进」（add 到符号体时为体缩进，@0 = 基准层，@1 = 深一层）：
     用了 @n: 的行不要再写字面缩进，层级统一由 @n 表达。
     写入动作默认回显 unified diff；dry_run=true 只预览不落盘。
+    diff_context 指定 diff 上下文行数（默认 3）；显式给出时不做长 diff 折叠，完整回显。
     """
     act = (action or "").strip().lower()
     old_code = _norm_text(old_code)
@@ -82,6 +84,12 @@ def script_editor(action: str = None, file_path: str = None, url: str = None,
         limit = DEFAULT_LIMIT
     if limit < 1:
         limit = DEFAULT_LIMIT
+    try:
+        diff_context = int(diff_context) if diff_context is not None else None
+    except (TypeError, ValueError):
+        return error("diff_context 必须为非负整数", code="invalid_argument")
+    if diff_context is not None and diff_context < 0:
+        return error("diff_context 必须为非负整数", code="invalid_argument")
 
     src = {}
     if file_path:
@@ -169,6 +177,7 @@ def script_editor(action: str = None, file_path: str = None, url: str = None,
 
     lines = code.splitlines()
     unit = _indent_unit(lines)
+    top_gap = 2 if _normalize_language(language) == "python" else 1
     sym = None
     use_symbol = bool(symbol)
     line_mode = start_line is not None
@@ -215,14 +224,14 @@ def script_editor(action: str = None, file_path: str = None, url: str = None,
             if err:
                 return error(err, code="bad_range")
             return _finish(file_path, encoding, newline, "delete", 1, "deleted", new_src,
-                           before=code, dry_run=dry_run,
+                           before=code, dry_run=dry_run, diff_context=diff_context,
                            extra={"symbol": sym.name, "range": f"{s}-{e}"})
         if line_mode:
             new_src, err = _replace_lines(code, _as_int(start_line), _as_int(end_line), "")
             if err:
                 return error(err, code="bad_range")
             return _finish(file_path, encoding, newline, "delete", 1, "deleted", new_src,
-                           before=code, dry_run=dry_run,
+                           before=code, dry_run=dry_run, diff_context=diff_context,
                            extra={"range": f"{_as_int(start_line)}-{_as_int(end_line) or _as_int(start_line)}"})
         if not old_code:
             return error("delete 需要提供 symbol、start_line 或 old_code", code="missing_argument")
@@ -231,7 +240,7 @@ def script_editor(action: str = None, file_path: str = None, url: str = None,
             return error(err + (_hint_msg(code, old_code) if ecode == "not_found" else ""),
                          code=ecode)
         return _finish(file_path, encoding, newline, "delete", count, "deleted", new_src,
-                       before=code, dry_run=dry_run, extra=meta)
+                       before=code, dry_run=dry_run, diff_context=diff_context, extra=meta)
 
     if act == "edit":
         if sym is not None:
@@ -255,7 +264,7 @@ def script_editor(action: str = None, file_path: str = None, url: str = None,
             if err:
                 return error(err, code="bad_range")
             return _finish(file_path, encoding, newline, "edit", 1, "replaced", new_src,
-                           before=code, dry_run=dry_run,
+                           before=code, dry_run=dry_run, diff_context=diff_context,
                            extra={"symbol": sym.name, "range": f"{s}-{e}"})
         if line_mode:
             s, e = _as_int(start_line), _as_int(end_line)
@@ -264,7 +273,8 @@ def script_editor(action: str = None, file_path: str = None, url: str = None,
             if err:
                 return error(err, code="bad_range")
             return _finish(file_path, encoding, newline, "edit", 1, "replaced", new_src,
-                           before=code, dry_run=dry_run, extra={"range": f"{s}-{e or s}"})
+                           before=code, dry_run=dry_run, diff_context=diff_context,
+                           extra={"range": f"{s}-{e or s}"})
         if not old_code:
             return error("edit 需要提供 symbol、start_line 或 old_code", code="missing_argument")
         if new_code == old_code:
@@ -274,7 +284,7 @@ def script_editor(action: str = None, file_path: str = None, url: str = None,
             return error(err + (_hint_msg(code, old_code) if ecode == "not_found" else ""),
                          code=ecode)
         return _finish(file_path, encoding, newline, "edit", count, "replaced", new_src,
-                       before=code, dry_run=dry_run, extra=meta)
+                       before=code, dry_run=dry_run, diff_context=diff_context, extra=meta)
 
     # ---------------- add ----------------
     if not new_code:
@@ -295,12 +305,12 @@ def script_editor(action: str = None, file_path: str = None, url: str = None,
         body = _prepare(new_code, indent, unit)
         if where != "start":             # 插进体的首行属于语句流，不额外补空行
             next_is_def = where == "before" or (at < len(lines) and _def_like(lines[at]))
-            body = _pad_blank(lines, at, body, next_is_def=next_is_def)
+            body = _pad_blank(lines, at, body, next_is_def=next_is_def, top_gap=top_gap)
         new_src, err = _insert_at_line(code, at, body)
         if err:
             return error(err, code="bad_range")
         return _finish(file_path, encoding, newline, "add", 1, "inserted", new_src,
-                       before=code, dry_run=dry_run,
+                       before=code, dry_run=dry_run, diff_context=diff_context,
                        extra={"symbol": sym.name, "at_line": at, "position": where})
     if line_mode:
         at = _as_int(start_line)
@@ -309,29 +319,34 @@ def script_editor(action: str = None, file_path: str = None, url: str = None,
         anchor = lines[at - 1] if 1 <= at <= len(lines) else ""
         indent = re.match(r"[ \t]*", anchor).group(0) if anchor.strip() else ""
         body = _pad_blank(lines, at, _prepare(new_code, indent, unit),
-                          next_is_def=at < len(lines) and _def_like(lines[at]))
+                          next_is_def=at < len(lines) and _def_like(lines[at]), top_gap=top_gap)
         new_src, err = _insert_at_line(code, at, body)
         if err:
             return error(err, code="bad_range")
         return _finish(file_path, encoding, newline, "add", 1, "inserted", new_src,
-                       before=code, dry_run=dry_run, extra={"at_line": at})
+                       before=code, dry_run=dry_run, diff_context=diff_context,
+                       extra={"at_line": at})
     if not old_code:
         body = _prepare(new_code, "", unit)
-        # 追加到文件末尾的新定义：与上一行之间留一个空行
-        if (_def_like(body) and lines and lines[-1].strip()
-                and not code.endswith("\n\n") and not body.startswith("\n")):
-            body = "\n" + body
+        # 追加到文件末尾的新定义：与上一行之间按顶层/成员补足空行（顶层 2 行、成员 1 行）
+        if _def_like(body) and lines and not body.startswith("\n"):
+            trailing = len(code) - len(code.rstrip("\n"))
+            need = _def_gap(body, top_gap) + 1 - trailing
+            if need > 0:
+                body = "\n" * need + body
         sep = "" if not code or code.endswith("\n") or body.startswith("\n") else "\n"
         new_src = code + sep + body
         if not new_src.endswith("\n"):
             new_src += "\n"
         return _finish(file_path, encoding, newline, "add", 1, "inserted", new_src,
-                       before=code, dry_run=dry_run, extra={"at_line": len(lines) + 1})
+                       before=code, dry_run=dry_run, diff_context=diff_context,
+                       extra={"at_line": len(lines) + 1})
     # old_code 锚点：缩进以锚点行自身为基准（`@n:` 同理）
-    new_src, count, err, ecode, meta = _add_after(code, old_code, new_code, replace_all,
-                                                  before=(pos == "before"), unit=unit)
+    new_src, count, err, ecode, meta = _add_after(
+        code, old_code, new_code, replace_all, before=(pos == "before"), unit=unit,
+        top_gap=top_gap)
     if err:
         return error(err + (_hint_msg(code, old_code) if ecode == "not_found" else ""),
                      code=ecode)
     return _finish(file_path, encoding, newline, "add", count, "inserted", new_src,
-                   before=code, dry_run=dry_run, extra=meta)
+                   before=code, dry_run=dry_run, diff_context=diff_context, extra=meta)

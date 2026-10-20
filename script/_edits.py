@@ -106,32 +106,53 @@ def _def_like(text: str) -> bool:
     return False
 
 
-def _pad_blank(lines: List[str], at: int, text: str, next_is_def: bool = False) -> str:
+def _top_level(text: str) -> bool:
+    """首个非空行是否顶格（顶层定义与成员定义的空行习惯不同）"""
+    for line in (text or "").split("\n"):
+        if line.strip():
+            return line[:1] not in (" ", "\t")
+    return False
+
+
+def _def_gap(text: str, top_gap: int = 1) -> int:
+    """定义类内容与上文之间应有的空行数：顶层 top_gap 行（Python 2）、成员 1 行"""
+    return top_gap if _top_level(text) else 1
+
+
+def _pad_blank(lines: List[str], at: int, text: str, next_is_def: bool = False,
+               top_gap: int = 1) -> str:
     """按需给插入内容补空行；`at` 语义同 _insert_at_line（插到第 at 行之后，0 = 文件开头）。
 
-    - 新内容以 def/class/function 等定义开头、且插入点上一行不是空行 -> 前面补 1 个空行；
-    - next_is_def=true（后面紧挨着一个定义）-> 末尾补到恰有 1 个空行；
+    - 新内容以 def/class/function 等定义开头、且插入点上一行不是空行 -> 前面补空行
+      （顶层 top_gap 行，Python 传 2；成员定义 1 个）；
+    - next_is_def=true（后面紧挨着一个定义）-> 末尾补到 1 个空行，前后都是顶层定义时
+      补 top_gap 个；
     只调整插入内容自身，不改动文件其它部分。
     """
     if not text.strip():
         return text
     prev = lines[at - 1] if 1 <= at <= len(lines) else ""
     if _def_like(text) and prev.strip() and not text.startswith("\n"):
-        text = "\n" + text
-    if next_is_def and not text.endswith("\n\n"):
-        text = text.rstrip("\n") + "\n\n"
+        text = "\n" * _def_gap(text, top_gap) + text
+    if next_is_def:
+        nxt = lines[at] if 0 <= at < len(lines) else ""
+        gap = top_gap if _top_level(text) and _top_level(nxt) else 1
+        trailing = len(text) - len(text.rstrip("\n"))
+        if gap + 1 - trailing > 0:
+            text = text.rstrip("\n") + "\n" * (gap + 1)
     return text
 
 
-def _pad_block(prev: str, text: str, nxt: str) -> str:
+def _pad_block(prev: str, text: str, nxt: str, top_gap: int = 1) -> str:
     """按 _pad_blank 语义，用插入点前后行文本给整块内容补空行"""
     if not text.strip():
         return text
     text = text.rstrip("\n")
     if _def_like(text) and prev.strip():
-        text = "\n" + text
+        text = "\n" * _def_gap(text, top_gap) + text
     if _def_like(nxt):
-        text = text + "\n\n"
+        gap = top_gap if _top_level(text) and _top_level(nxt) else 1
+        text = text + "\n" * (gap + 1)
     return text
 
 
@@ -258,13 +279,26 @@ def _fuzzy_replace(code: str, old_code: str, new_code: str, replace_all: bool, u
     out, pos = [], 0
     for i, j in picked:
         out.extend(lines[pos:i])
-        out.extend(_reindent(new_code, lines[i], old_code, unit).split("\n"))
-        pos = j + 1
+        end = j + 1
+        body = _new_lines(_reindent(new_code, lines[i], old_code, unit))
+        if not body:                    # 删除：接缝两侧空行合并后最多保留 2 行
+            prev_blanks = 0
+            while prev_blanks < len(out) and not out[-1 - prev_blanks].strip():
+                prev_blanks += 1
+            blanks = 0
+            while end + blanks < len(lines) and not lines[end + blanks].strip():
+                blanks += 1
+            keep = 0 if not out else max(0, 2 - prev_blanks)
+            if blanks > keep:
+                end += blanks - keep
+        out.extend(body)
+        pos = end
     out.extend(lines[pos:])
     return "\n".join(out), len(picked), level, None, None
 
 
-def _fuzzy_add(code: str, old_code: str, new_code: str, replace_all: bool, before: bool, unit: str):
+def _fuzzy_add(code: str, old_code: str, new_code: str, replace_all: bool, before: bool, unit: str,
+               top_gap: int = 1):
     """精确未命中时的按行插入，返回 (new_src, count, level, err, err_code)"""
     lines = code.split("\n")
     level, hits = _fuzzy_hits(lines, old_code)
@@ -277,8 +311,8 @@ def _fuzzy_add(code: str, old_code: str, new_code: str, replace_all: bool, befor
     for i, j in picked:
         text = _reindent(new_code, lines[i], old_code, unit)
         text = _pad_block(lines[i - 1] if i > 0 else "", text,
-                          lines[j + 1] if j + 1 < len(lines) else "")
-        block = text.split("\n")
+                          lines[j + 1] if j + 1 < len(lines) else "", top_gap)
+        block = _new_lines(text)
         if before:
             out.extend(lines[pos:i])
             out.extend(block)
@@ -343,7 +377,7 @@ def _insert_at_line(code: str, at: int, new_code: str):
 
 
 def _add_after(code: str, anchor: str, new_code: str, replace_all: bool, before: bool = False,
-               unit: str = "    "):
+               unit: str = "    ", top_gap: int = 1):
     """在 anchor 之后（或之前）按行边界插入 new_code。
 
     行边界插入时按 _pad_blank 规则补空行，与 symbol 定位行为一致。
@@ -352,7 +386,7 @@ def _add_after(code: str, anchor: str, new_code: str, replace_all: bool, before:
     count = code.count(anchor)
     if count == 0:
         new_src, count, level, err, ecode = _fuzzy_add(code, anchor, new_code, replace_all,
-                                                       before, unit)
+                                                       before, unit, top_gap)
         return new_src, count, err, ecode, ({"matched": level} if level else None)
     if count > 1 and not replace_all:
         return None, count, _multi_msg(code, anchor, count), "multiple_matches", None
@@ -377,7 +411,7 @@ def _add_after(code: str, anchor: str, new_code: str, replace_all: bool, before:
             else:                           # anchor 自身以换行结尾，插入点在行首
                 nxt = code[at:].split("\n", 1)[0]
         prev = (head[:-1] if head.endswith("\n") else head).rsplit("\n", 1)[-1] if head else ""
-        return _pad_block(prev, body, nxt)
+        return _pad_block(prev, body, nxt, top_gap)
 
     def seg(at: int, prev_char: str, next_char: str) -> str:
         text = padded(at)
@@ -427,12 +461,12 @@ def _add_after(code: str, anchor: str, new_code: str, replace_all: bool, before:
 
 
 def _finish(file_path, encoding, newline, action, count, count_key, new_src,
-            before=None, dry_run=False, extra=None):
+            before=None, dry_run=False, extra=None, diff_context=None):
     """落盘并返回精简摘要 + 变更 diff（不含全量源码，省 token）"""
     payload = {"action": action, "file": _short_path(file_path), count_key: count}
     if before is not None:
         payload["lines"] = [len(before.splitlines()), len(new_src.splitlines())]
-        text, truncated, _ = _make_diff(before, new_src)
+        text, truncated, _ = _make_diff(before, new_src, diff_context)
         payload["diff"] = text
         if truncated:
             payload["diff_truncated"] = True

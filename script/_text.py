@@ -211,13 +211,16 @@ def _new_lines(new_code: str) -> List[str]:
     return lines
 
 
-def _make_diff(before: str, after: str):
-    """生成 unified diff（3 行上下文），返回 (text, truncated, hunks)
+def _make_diff(before: str, after: str, context=None):
+    """生成 unified diff，返回 (text, truncated, hunks)
 
-    小改动给完整 diff；超过 DIFF_LIMIT 行时只给 hunk 索引与增删行数，避免刷屏。
+    context=None（默认）：3 行上下文；小改动给完整 diff，超过 DIFF_LIMIT 行时只给
+    hunk 索引与增删行数，避免刷屏。
+    context 显式给出：按指定行数输出，且不折叠（大范围重构可完整核对）。
     """
+    n = 3 if context is None else context
     raw = list(difflib.unified_diff(before.splitlines(), after.splitlines(),
-                                    fromfile="before", tofile="after", lineterm="", n=3))
+                                    fromfile="before", tofile="after", lineterm="", n=n))
     if not raw:
         return "", False, 0
     hunks, cur = [], None
@@ -227,6 +230,8 @@ def _make_diff(before: str, after: str):
             hunks.append(cur)
         elif cur is not None:
             cur.append(line)
+    if context is not None:
+        return "\n".join(raw), False, len(hunks)
     body_total = len(raw) - 2
     if body_total <= DIFF_LIMIT:
         return "\n".join(raw), False, len(hunks)
