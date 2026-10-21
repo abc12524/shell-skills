@@ -22,6 +22,7 @@ shell-skills/
 ├── exif/               图片 EXIF 工具（读取 / 移除 GPS / 移除全部 / 写入 / 备注）
 ├── ftp/                FTP/FTPS 文件传输（ftplib，兼容 vsftpd：上传 / 下载 / 删除 / 列表）
 ├── home_assistant/     Home Assistant 智能家居（实体状态 / 服务调用 / 历史日志 / 模板渲染）
+├── llm_balance/        大模型平台余额查询（火山引擎 / 智谱 BigModel / DeepSeek）
 ├── mail/               多邮箱通用工具（列收件箱 / 读邮件 / 发邮件 / 查未读）
 ├── nga/                NGA 论坛浏览（版块查询 / 帖子 / 回复 / 搜索 / 登录）
 ├── objstore/           对象存储（S3 兼容）：上传 / 下载 / 删除 / 列表 / 复制 / 预签名
@@ -36,10 +37,8 @@ shell-skills/
 ├── token_count/        DeepSeek V4 token 计数（直接文本 / 文件路径，纯 Python 零依赖）
 ├── transmission/       Transmission 下载管理（新建 / 列表 / 详情 / 暂停 / 继续 / 删除）
 ├── tplink_ptz/         TP-Link 摄像头 PTZ 云台控制
-├── volc_balance/       火山引擎账户余额查询
 ├── wait/               等待指定秒数（最长 600 秒）
-├── weather/            wttr.in 天气查询（默认武汉）
-└── zhipu_balance/      智谱 BigModel 账户余额查询
+└── weather/            wttr.in 天气查询（默认武汉）
 ```
 
 > 每个技能文件夹内含入口脚本 `skill.py`、可选的配置模板与 `_` 前缀助手模块；

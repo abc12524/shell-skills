@@ -95,6 +95,16 @@
       "config": ["HA_URL", "HA_TOKEN"]
     },
     {
+      "name": "llm_balance",
+      "description": "大模型平台余额查询（火山引擎 / 智谱 BigModel / DeepSeek）",
+      "platform": ["linux", "windows", "android", "ios"],
+      "path": "llm_balance",
+      "entry": "skill.py",
+      "version": "1.0.0",
+      "requires": ["requests", "volcengine"],
+      "config": ["VOLC_ACCESS_KEY", "VOLC_SECRET_KEY", "VOLC_REGION", "VOLC_SESSION_TOKEN", "ZHIPU_API_KEY", "DEEPSEEK_API_KEY"]
+    },
+    {
       "name": "mail",
       "description": "多邮箱通用工具（163/126/yeah/qq/gmail/outlook）：列收件箱 / 读邮件 / 发邮件 / 查未读",
       "platform": ["linux", "windows", "android", "ios"],
@@ -235,16 +245,6 @@
       "config": []
     },
     {
-      "name": "volc_balance",
-      "description": "火山引擎账户余额查询",
-      "platform": ["linux", "windows", "android", "ios"],
-      "path": "volc_balance",
-      "entry": "skill.py",
-      "version": "1.0.0",
-      "requires": ["volcengine"],
-      "config": ["VOLC_ACCESS_KEY", "VOLC_SECRET_KEY", "VOLC_REGION", "VOLC_SESSION_TOKEN"]
-    },
-    {
       "name": "wait",
       "description": "等待指定秒数（阻塞），最长 10 分钟（600 秒）",
       "platform": ["linux", "windows", "android", "ios"],
@@ -263,16 +263,6 @@
       "version": "1.0.0",
       "requires": [],
       "config": []
-    },
-    {
-      "name": "zhipu_balance",
-      "description": "智谱 BigModel 账户余额查询",
-      "platform": ["linux", "windows", "android", "ios"],
-      "path": "zhipu_balance",
-      "entry": "skill.py",
-      "version": "1.0.0",
-      "requires": ["requests"],
-      "config": ["ZHIPU_API_KEY"]
     }
   ]
 }
