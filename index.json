@@ -195,6 +195,16 @@
       "config": ["SMB_HOST", "SMB_SHARE", "SMB_USERNAME", "SMB_PASSWORD", "SMB_DOMAIN", "SMB_PORT"]
     },
     {
+      "name": "ssh",
+      "description": "SSH 远程执行与 SCP 文件传输：执行命令、上传/下载文件与目录",
+      "platform": ["linux", "windows", "android", "ios"],
+      "path": "ssh",
+      "entry": "skill.py",
+      "version": "1.0.0",
+      "requires": ["paramiko"],
+      "config": ["SSH_HOST", "SSH_PORT", "SSH_USERNAME", "SSH_PASSWORD", "SSH_PRIVATE_KEY_PATH", "SSH_PRIVATE_KEY", "SSH_PASSPHRASE", "SSH_STRICT_HOST_KEY", "SSH_TIMEOUT"]
+    },
+    {
       "name": "storage_audit",
       "description": "手机存储审计：容量 / 最大文件 / 目录与类型排行 / 回收站清理",
       "platform": ["android"],

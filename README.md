@@ -32,6 +32,7 @@ shell-skills/
 ├── script/             脚本/代码增删改查 + 结构骨架
 ├── skill_guide/        如何编写 skill：规范、要求与示例（内置 skill_README.md）
 ├── smb/                SMB/CIFS 文件传输（smbprotocol：上传 / 下载 / 删除 / 列表）
+├── ssh/                SSH 远程执行与 SCP 文件传输（paramiko：exec / 上传 / 下载）
 ├── storage_audit/      手机存储审计（分区容量 / 大文件 / 目录与类型排行 / 回收站清理）
 ├── timestamp/          时间戳转换（当前时间 / 时间戳↔日期，支持时区与格式）
 ├── token_count/        DeepSeek V4 token 计数（直接文本 / 文件路径，纯 Python 零依赖）

@@ -1,0 +1,11 @@
+{
+  "SSH_HOST": "192.168.1.10",
+  "SSH_PORT": "22",
+  "SSH_USERNAME": "root",
+  "SSH_PASSWORD": "",
+  "SSH_PRIVATE_KEY_PATH": "",
+  "SSH_PRIVATE_KEY": "",
+  "SSH_PASSPHRASE": "",
+  "SSH_STRICT_HOST_KEY": "false",
+  "SSH_TIMEOUT": "30"
+}
