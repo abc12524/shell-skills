@@ -197,7 +197,7 @@
     {
       "name": "ssh",
       "description": "SSH 远程执行与 SCP 文件传输：执行命令、上传/下载文件与目录",
-      "platform": ["linux", "windows", "android", "ios"],
+      "platform": ["linux", "windows"],
       "path": "ssh",
       "entry": "skill.py",
       "version": "1.0.0",
