@@ -1,16 +1,21 @@
 # skill: qbittorrent
-# description: qBittorrent 下载管理（新建 / 列表 / 详情 / 暂停 / 继续 / 删除，可连同文件删除）
+# description: qBittorrent 下载管理（列表 / 详情 / 新建 / 暂停 / 继续 / 批量删除，可连同文件删除）
 # status: enable
 # usage:
 #   arguments.action = add | list | info | pause | resume | delete（默认 list）
-#   add: source(magnet/URL/.torrent) / save_path / category / paused；list 返回 Markdown 表格
-#   其余: keyword(hash 或名称关键词)；delete 可加 delete_files=true 连文件删除
-#   连接: config.json 的 QBIT_*；有 QBIT_API_KEY（或参数 api_key）时用 Bearer 认证并跳过账号登录
+#   list: filter / category / keyword / limit / sort / order / show_completion
+#   add: source 或 sources（数组 / 换行分隔）/ save_path / category / paused
+#   info / pause / resume: keyword（hash 或名称关键词）
+#   delete: keyword | hashes=a|b|c | before=YYYY-MM-DD | after=... | all=true[+filter]
+#           可加 delete_files=true、dry_run=true（只列出待删内容不执行）
+#   连接: config.json 的 QBIT_*，或 QBIT_API_KEY 走 Bearer 认证
 #   示例: {"action":"list","filter":"downloading"}
 import base64
 import json
 import os
+import re
 import sys
+import time
 from urllib.parse import parse_qs, urlparse
 
 try:  # android-agent / kelivo-agent
@@ -98,24 +103,105 @@ def _format_eta(seconds):
     return "%d:%02d" % (minutes, secs)
 
 
+_INVALID_TS = (None, 0, -1, 4294967295)
+_SORT_KEYS = {
+    "added": lambda t: t.get("added_on") or 0,
+    "completed": lambda t: t.get("completion_on") or 0,
+    "name": lambda t: str(t.get("name") or "").lower(),
+    "progress": lambda t: float(t.get("progress") or 0),
+    "size": lambda t: t.get("size") or 0,
+    "ratio": lambda t: float(t.get("ratio") or 0),
+}
+
+
+def _fmt_ts(ts):
+    """qBittorrent 的 unix 时间戳 -> 本地时间字符串；未完成 / 无效返回 None。"""
+    try:
+        ts = int(ts)
+    except (TypeError, ValueError):
+        return None
+    if ts in _INVALID_TS or ts < 0:
+        return None
+    try:
+        return time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(ts))
+    except (OSError, ValueError, OverflowError):
+        return None
+
+
+def _sort_items(items, sort_by="completed", order="desc"):
+    key = _SORT_KEYS.get(sort_by)
+    if key is None:
+        raise QbitError("不支持的 sort '%s'，可用: %s"
+                        % (sort_by, " / ".join(sorted(_SORT_KEYS))), "invalid_argument")
+    reverse = str(order or "desc").lower() != "asc"
+    return sorted(items, key=key, reverse=reverse)
+
+
+_BATCH_CHUNK = 100
+_TS_FORMATS = ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%d",
+               "%Y/%m/%d %H:%M:%S", "%Y/%m/%d %H:%M", "%Y/%m/%d")
+
+
+def _split_tokens(value, pattern=r"[\r\n|,;\s]+"):
+    """把 list（可嵌套）/ 分隔字符串统一成去空白、去重的字符串列表。"""
+    if value is None:
+        return []
+    if isinstance(value, (list, tuple, set)):
+        out = []
+        for item in value:
+            for token in _split_tokens(item, pattern):
+                if token not in out:
+                    out.append(token)
+        return out
+    out = []
+    for token in re.split(pattern, str(value)):
+        token = token.strip()
+        if token and token not in out:
+            out.append(token)
+    return out
+
+
+def _parse_ts_bound(value, label="时间"):
+    """支持 unix 时间戳、'YYYY-MM-DD'、'YYYY-MM-DD HH:MM[:SS]'（也接受 '/'）。"""
+    text = str(value).strip()
+    if not text:
+        raise QbitError("%s 不能为空" % label, "invalid_argument")
+    if re.fullmatch(r"\d{9,11}", text):
+        return int(text)
+    for fmt in _TS_FORMATS:
+        try:
+            return int(time.mktime(time.strptime(text, fmt)))
+        except ValueError:
+            continue
+    raise QbitError("%s 格式无法识别: %s（应为 YYYY-MM-DD 或 YYYY-MM-DD HH:MM）"
+                    % (label, text), "invalid_argument")
+
+
 def _md_cell(value):
     return str(value if value is not None else "-").replace("|", "\\|").replace("\n", " ")
 
 
-def _markdown_table(items):
+def _markdown_table(items, show_completion=True):
     if not items:
         return "暂无下载任务"
-    lines = [
-        "| 名称 | 状态 | 进度 | 大小 | 下载 | 上传 | ETA | 分类 |",
-        "| --- | --- | ---: | ---: | ---: | ---: | ---: | --- |",
-    ]
+    cols = ["名称", "状态", "进度", "大小", "下载", "上传", "分享率"]
+    aligns = ["---", "---", "---:", "---:", "---:", "---:", "---:"]
+    cols += ["ETA", "分类"]
+    aligns += ["---:", "---"]
+    if show_completion:
+        cols.append("完成时间")
+        aligns.append("---")
+    out = ["| " + " | ".join(cols) + " |", "| " + " | ".join(aligns) + " |"]
     for t in items:
         s = _torrent_summary(t)
-        lines.append("| %s | %s | %.1f%% | %s | %s | %s | %s | %s |" % (
-            _md_cell(s["name"]), _md_cell(s["state"]), s["progress"], s["size_human"],
-            _human_speed(s["dlspeed"]), _human_speed(s["upspeed"]),
-            _format_eta(s["eta_seconds"]), _md_cell(s["category"])))
-    return "\n".join(lines)
+        cells = [_md_cell(s["name"]), _md_cell(s["state"]), "%.1f%%" % s["progress"],
+                 s["size_human"], _human_speed(s["dlspeed"]), _human_speed(s["upspeed"]),
+                 "%.2f" % float(s["ratio"] or 0), _format_eta(s["eta_seconds"]),
+                 _md_cell(s["category"])]
+        if show_completion:
+            cells.append(_md_cell(s["completion_time"] or "-"))
+        out.append("| " + " | ".join(cells) + " |")
+    return "\n".join(out)
 
 
 def _torrent_summary(t):
@@ -134,6 +220,11 @@ def _torrent_summary(t):
         "category": t.get("category"),
         "save_path": t.get("save_path"),
         "added_on": t.get("added_on"),
+        "added_time": _fmt_ts(t.get("added_on")),
+        "completion_on": t.get("completion_on"),
+        "completion_time": _fmt_ts(t.get("completion_on")),
+        "last_activity": t.get("last_activity"),
+        "last_activity_time": _fmt_ts(t.get("last_activity")),
     }
 
 
@@ -197,25 +288,50 @@ class QbitClient:
                             "http_error")
 
     def add(self, source, save_path=None, category=None, paused=False):
+        result = self.add_many([source], save_path, category, paused)
+        return result["hashes"][0]
+
+    def add_many(self, sources, save_path=None, category=None, paused=False):
+        """批量添加：magnet / URL 走 urls（换行分隔），.torrent 走 multipart 多文件。"""
+        sources = [str(s).strip() for s in (sources or []) if str(s).strip()]
+        if not sources:
+            raise QbitError("add 需要 source / sources（magnet / URL / .torrent 路径）",
+                            "invalid_argument")
         data = {"paused": "true" if paused else "false"}
         if save_path:
             data["savepath"] = save_path
         if category:
             data["category"] = category
 
-        if source.startswith(("magnet:", "http://", "https://")):
-            data["urls"] = source
-            r = self._post("/api/v2/torrents/add", data=data, timeout=60)
-        else:
-            path = os.path.abspath(os.path.expanduser(source))
-            if not os.path.isfile(path):
-                raise QbitError("种子文件不存在: %s" % source, "not_found")
-            with open(path, "rb") as fh:
-                r = self._post("/api/v2/torrents/add", data=data,
-                               files={"torrents": (os.path.basename(path), fh)}, timeout=120)
-        if r.text.strip() != "Ok.":
-            raise QbitError("添加失败: %s" % r.text.strip(), "add_failed")
-        return _magnet_hash(source)
+        urls, handles, hashes = [], [], []
+        try:
+            for source in sources:
+                if source.startswith(("magnet:", "http://", "https://")):
+                    urls.append(source)
+                    hashes.append(_magnet_hash(source) if source.startswith("magnet:") else None)
+                else:
+                    path = os.path.abspath(os.path.expanduser(source))
+                    if not os.path.isfile(path):
+                        raise QbitError("种子文件不存在: %s" % source, "not_found")
+                    fh = open(path, "rb")
+                    handles.append(fh)
+                    hashes.append(None)
+            if urls:
+                data["urls"] = "\n".join(urls)
+            files = [("torrents", (os.path.basename(fh.name), fh)) for fh in handles] or None
+            timeout = 120 if files else 60
+            r = self._post("/api/v2/torrents/add", data=data, files=files, timeout=timeout)
+        finally:
+            for fh in handles:
+                try:
+                    fh.close()
+                except OSError:
+                    pass
+        text = r.text.strip()
+        if text not in ("Ok.", ""):
+            raise QbitError("添加失败: %s" % text, "add_failed")
+        return {"count": len(sources), "hashes": hashes,
+                "urls": len(urls), "files": len(handles)}
 
     def torrents(self, filter_by="all", category=None):
         params = {"filter": filter_by}
@@ -241,9 +357,19 @@ class QbitClient:
         self._post("/api/v2/torrents/resume", data={"hashes": torrent_hash})
 
     def delete(self, torrent_hash, delete_files=False):
-        self._post("/api/v2/torrents/delete",
-                   data={"hashes": torrent_hash,
-                         "deleteFiles": "true" if delete_files else "false"})
+        self.delete_many([torrent_hash], delete_files)
+
+    def delete_many(self, hashes, delete_files=False):
+        """批量删除：hashes 用 | 拼成一次请求，超过 _BATCH_CHUNK 自动分片。"""
+        hashes = [str(h).strip() for h in (hashes or []) if str(h).strip()]
+        if not hashes:
+            raise QbitError("没有要删除的 hash", "invalid_argument")
+        for i in range(0, len(hashes), _BATCH_CHUNK):
+            chunk = hashes[i:i + _BATCH_CHUNK]
+            self._post("/api/v2/torrents/delete",
+                       data={"hashes": "|".join(chunk),
+                             "deleteFiles": "true" if delete_files else "false"})
+        return len(hashes)
 
 
 def _client(a):
@@ -270,14 +396,24 @@ def _client(a):
 
 
 def _do_add(client, a):
-    source = str(a.get("source") or "").strip()
-    if not source:
-        raise QbitError("add 需要 source（magnet / URL / .torrent 路径）", "invalid_argument")
-    torrent_hash = client.add(source, a.get("save_path"), a.get("category"),
-                              _as_bool(a.get("paused"), False))
-    return ok({"action": "add", "hash": torrent_hash, "source": source,
-               "save_path": a.get("save_path"), "category": a.get("category"),
-               "paused": _as_bool(a.get("paused"), False)})
+    sources = _split_tokens(a.get("sources"), r"[\r\n;]+")
+    for token in _split_tokens(a.get("source"), r"[\r\n;]+"):
+        if token not in sources:
+            sources.append(token)
+    if not sources:
+        raise QbitError("add 需要 source / sources（magnet / URL / .torrent 路径，"
+                        "多个用数组或换行分隔）", "invalid_argument")
+    save_path = a.get("save_path")
+    category = a.get("category")
+    paused = _as_bool(a.get("paused"), False)
+    result = client.add_many(sources, save_path, category, paused)
+    lines = ["| # | 已提交源 | hash |", "| ---: | --- | --- |"]
+    for idx, (src, h) in enumerate(zip(sources, result["hashes"]), 1):
+        shown = src if len(src) <= 80 else src[:77] + "..."
+        lines.append("| %d | %s | %s |" % (idx, _md_cell(shown), h or "-"))
+    return ok({"action": "add", "count": result["count"], "hashes": result["hashes"],
+               "save_path": save_path, "category": category, "paused": paused,
+               "sources": sources, "text": "\n".join(lines)})
 
 
 def _do_list(client, a):
@@ -293,18 +429,23 @@ def _do_list(client, a):
         limit = int(a.get("limit") or DEFAULT_LIMIT)
     except (TypeError, ValueError):
         raise QbitError("limit 必须是数字", "invalid_argument")
+    sort_by = str(a.get("sort") or "completed").strip().lower()
+    order = str(a.get("order") or "desc").strip().lower()
+    items = _sort_items(items, sort_by, order)
     if limit > 0:
         items = items[:limit]
-    table = _markdown_table(items)
+    show_completion = _as_bool(a.get("show_completion"), True)
+    table = _markdown_table(items, show_completion)
     return ok({"action": "list", "filter": filter_by, "category": a.get("category"),
-               "count": len(items), "text": table})
+               "sort": sort_by, "order": order, "count": len(items), "text": table})
 
 
 def _do_info(client, a):
     t = client.find(a.get("keyword"))
     detail = _torrent_summary(t)
     for key in ("downloaded", "uploaded", "num_seeds", "num_leechs", "completed",
-                "content_path", "magnet_uri", "comment", "state", "time_active"):
+                "content_path", "magnet_uri", "comment", "state", "time_active",
+                "completion_on", "last_activity"):
         if key in t:
             detail[key] = t[key]
     return ok({"action": "info", "torrent": detail})
@@ -323,11 +464,80 @@ def _do_resume(client, a):
 
 
 def _do_delete(client, a):
-    t = client.find(a.get("keyword"))
     delete_files = _as_bool(a.get("delete_files"), False)
-    client.delete(t["hash"], delete_files)
-    return ok({"action": "delete", "hash": t["hash"], "name": t.get("name"),
-               "delete_files": delete_files})
+    dry_run = _as_bool(a.get("dry_run"), False)
+    select_all = _as_bool(a.get("all"), False)
+    keyword = str(a.get("keyword") or "").strip()
+    hashes_arg = a.get("hashes")
+    before = a.get("before")
+    after = a.get("after")
+    filter_by = str(a.get("filter") or "all").strip().lower()
+    if filter_by not in _FILTERS:
+        raise QbitError("不支持的 filter '%s'，可用: %s"
+                        % (filter_by, " / ".join(sorted(_FILTERS))), "invalid_argument")
+
+    targets = []
+    if hashes_arg:
+        wanted = _split_tokens(hashes_arg, r"[\r\n|,;\s]+")
+        if not wanted:
+            raise QbitError("hashes 为空", "invalid_argument")
+        pool = client.torrents("all")
+        missing = []
+        for want in wanted:
+            hits = [t for t in pool if str(t.get("hash", "")).lower().startswith(want.lower())]
+            if hits:
+                targets.extend(hits)
+            else:
+                missing.append(want)
+        if missing:
+            raise QbitError("未找到 hash: %s" % ", ".join(missing), "not_found")
+    elif keyword and not (select_all or before or after or filter_by != "all"):
+        targets = [client.find(keyword)]
+    elif keyword or select_all or before or after or filter_by != "all":
+        targets = client.torrents(filter_by, a.get("category"))
+        if keyword:
+            lower = keyword.lower()
+            targets = [t for t in targets if lower in str(t.get("name", "")).lower()]
+    else:
+        raise QbitError("delete 需要筛选条件：keyword / hashes / before / after / "
+                        "all=true(+filter, category)", "invalid_argument")
+
+    if before:
+        cut = _parse_ts_bound(before, "before")
+        targets = [t for t in targets
+                   if 0 < int(t.get("completion_on") or 0) < cut]
+    if after:
+        cut = _parse_ts_bound(after, "after")
+        targets = [t for t in targets if int(t.get("completion_on") or 0) >= cut]
+
+    seen, uniq = set(), []
+    for t in targets:
+        h = t.get("hash")
+        if h and h not in seen:
+            seen.add(h)
+            uniq.append(t)
+    targets = sorted(uniq, key=lambda t: (int(t.get("completion_on") or 0),
+                                          str(t.get("name") or "")))
+
+    total = sum(int(t.get("size") or 0) for t in targets)
+    payload = {
+        "action": "delete", "count": len(targets), "delete_files": delete_files,
+        "dry_run": dry_run, "total_bytes": total, "total_size": _human_size(total),
+        "before": before, "after": after, "filter": filter_by, "category": a.get("category"),
+        "hashes": [t.get("hash") for t in targets],
+        "names": [t.get("name") for t in targets],
+    }
+    if not targets:
+        payload["text"] = "没有匹配的任务，未执行删除"
+        return ok(payload)
+    if dry_run:
+        payload["text"] = ("将删除 %d 个任务，合计 %s（试运行，未执行）\n\n"
+                           % (len(targets), _human_size(total))) + _markdown_table(targets, True)
+        return ok(payload)
+    client.delete_many([t["hash"] for t in targets], delete_files)
+    payload["text"] = "已删除 %d 个任务，合计 %s（delete_files=%s）" % (
+        len(targets), _human_size(total), "true" if delete_files else "false")
+    return ok(payload)
 
 
 _ACTIONS = {

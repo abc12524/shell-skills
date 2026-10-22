@@ -146,7 +146,7 @@
     },
     {
       "name": "qbittorrent",
-      "description": "qBittorrent 下载管理：新建 / 列表（Markdown）/ 详情 / 暂停 / 继续 / 删除（可连同文件）",
+      "description": "qBittorrent 下载管理：列表（Markdown 表格 + 排序）/ 详情 / 新建（多源）/ 暂停 / 继续 / 批量删除（按 hash、时间、过滤器，支持试运行与连文件删除）",
       "platform": ["linux", "windows", "android", "ios"],
       "path": "qbittorrent",
       "entry": "skill.py",
