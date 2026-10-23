@@ -1,0 +1,8 @@
+{
+  "HUAWEI_SWITCH_HOST": "192.168.1.1",
+  "HUAWEI_SWITCH_USER": "admin",
+  "HUAWEI_SWITCH_PASS": "your-password",
+  "HUAWEI_SWITCH_NAME": "Huawei",
+  "HUAWEI_SWITCH_KEEPALIVE": "120",
+  "HUAWEI_SWITCH_HOME": ""
+}

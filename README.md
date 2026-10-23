@@ -22,6 +22,7 @@ shell-skills/
 ├── exif/               图片 EXIF 工具（读取 / 移除 GPS / 移除全部 / 写入 / 备注）
 ├── ftp/                FTP/FTPS 文件传输（ftplib，兼容 vsftpd：上传 / 下载 / 删除 / 列表）
 ├── home_assistant/     Home Assistant 智能家居（实体状态 / 服务调用 / 历史日志 / 模板渲染）
+├── huawei_switch/      华为 VRP 设备常驻会话客户端（视图切换 / port 状态 / Y/N 需显式应答；仅 Linux）
 ├── llm_balance/        大模型平台余额查询（火山引擎 / 智谱 BigModel / DeepSeek）
 ├── mail/               多邮箱通用工具（列收件箱 / 读邮件 / 发邮件 / 查未读）
 ├── nga/                NGA 论坛浏览（版块查询 / 帖子 / 回复 / 搜索 / 登录）

@@ -95,6 +95,16 @@
       "config": ["HA_URL", "HA_TOKEN"]
     },
     {
+      "name": "huawei_switch",
+      "description": "华为 VRP 设备（路由器 / 交换机，旧版 SSH）常驻会话客户端：跟踪并切换视图（用户 / 系统 / 接口）、查看 port 状态；Y/N 提示须显式 answer；仅 Linux",
+      "platform": ["linux"],
+      "path": "huawei_switch",
+      "entry": "skill.py",
+      "version": "1.5.0",
+      "requires": [],
+      "config": ["HUAWEI_SWITCH_HOST", "HUAWEI_SWITCH_USER", "HUAWEI_SWITCH_PASS", "HUAWEI_SWITCH_NAME", "HUAWEI_SWITCH_HOME", "HUAWEI_SWITCH_KEEPALIVE"]
+    },
+    {
       "name": "llm_balance",
       "description": "大模型平台余额查询（火山引擎 / 智谱 BigModel / DeepSeek）",
       "platform": ["linux", "windows", "android", "ios"],
