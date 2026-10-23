@@ -236,7 +236,7 @@ def _do_folders(cfg, user, password):
         for b in boxes:
             flags = ("  [%s]" % ", ".join(b["flags"])) if b["flags"] else ""
             lines.append("  %s%s" % (b["name"], flags))
-        return ok({"folders": boxes, "text": "\n".join(lines)})
+        return ok({"text": "\n".join(lines)})
     finally:
         try:
             conn.logout()
@@ -252,7 +252,7 @@ def _do_providers():
         lines.append("          SMTP: %s %s:%s%s" % ("🔒" if p["smtp_ssl"] else "🔓", p["smtp_host"], p["smtp_port"],
                                                  " + STARTTLS" if p.get("smtp_starttls") else ""))
         lines.append("          备注: %s" % p["note"])
-    return ok({"providers": list(PROVIDERS), "text": "\n".join(lines)})
+    return ok({"text": "\n".join(lines)})
 
 
 def _do_list(cfg, user, password, folder="INBOX"):
@@ -262,17 +262,16 @@ def _do_list(cfg, user, password, folder="INBOX"):
         typ, data = conn.search(None, "ALL")
         ids = data[0].split()
         if not ids:
-            return ok({"total": 0, "mails": [], "text": "📭 文件夹为空"})
-        mails, lines = [], ["📬 %s 共 %d 封（显示最近 20 封）" % (folder or "INBOX", len(ids))]
+            return ok({"text": "📭 文件夹为空"})
+        lines = ["📬 %s 共 %d 封（显示最近 20 封）" % (folder or "INBOX", len(ids))]
         for uid in ids[-20:]:
             typ, d = conn.fetch(uid, "(RFC822.HEADER)")
             m = _msg(d[0][1])
             item = {"id": uid.decode(), "subject": str(m.get("Subject", "(无主题)")),
                     "from": str(m.get("From", "(未知)")),
                     "date": str(m.get("Date", ""))[:25]}
-            mails.append(item)
             lines.append("  [%s] %s\n        From: %s  %s" % (item["id"], item["subject"][:60], item["from"][:40], item["date"]))
-        return ok({"total": len(ids), "mails": mails, "text": "\n".join(lines)})
+        return ok({"text": "\n".join(lines)})
     finally:
         try:
             conn.logout()
@@ -307,8 +306,7 @@ def _do_read(cfg, user, password, uid, folder="INBOX", max_len=DEFAULT_MAX_BODY)
         body = (body or "(空或无法解析)")[:max_len]
         head = "📌 主题: %s\n👤 发件人: %s\n📅 日期: %s" % (m.get("Subject", "(无主题)"),
                                                       m.get("From", "(未知)"), m.get("Date", ""))
-        return ok({"id": str(uid), "subject": str(m.get("Subject", "")),
-                   "content_type": ctype, "body": body, "text": head + "\n\n" + body})
+        return ok({"text": head + "\n\n" + body})
     finally:
         try:
             conn.logout()
@@ -330,7 +328,7 @@ def _do_send(cfg, user, password, to_addr, subject, body):
             conn.quit()
         except Exception:
             pass
-    return ok({"to": to_addr, "subject": subject, "text": "✅ 已发送 → %s" % to_addr})
+    return ok({"text": "✅ 已发送 → %s" % to_addr})
 
 
 def _do_monitor(cfg, user, password, folder="INBOX"):
@@ -340,15 +338,14 @@ def _do_monitor(cfg, user, password, folder="INBOX"):
         typ, data = conn.search(None, "UNSEEN")
         ids = data[0].split()
         if not ids:
-            return ok({"unread": 0, "mails": [], "text": "📭 没有新邮件"})
-        mails, lines = [], ["📬 有 %d 封新邮件" % len(ids)]
+            return ok({"text": "📭 没有新邮件"})
+        lines = ["📬 有 %d 封新邮件" % len(ids)]
         for uid in ids[-5:]:
             typ, d = conn.fetch(uid, "(RFC822.HEADER)")
             m = _msg(d[0][1])
             item = {"id": uid.decode(), "subject": str(m.get("Subject", "?")), "from": str(m.get("From", "?"))}
-            mails.append(item)
             lines.append("  [%s] %s  —  %s" % (item["id"], item["subject"][:50], item["from"][:30]))
-        return ok({"unread": len(ids), "mails": mails, "text": "\n".join(lines)})
+        return ok({"text": "\n".join(lines)})
     finally:
         try:
             conn.logout()

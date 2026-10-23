@@ -494,8 +494,6 @@ def _do_state(client, a):
     if len(found) == 1 and not missing:
         return ok(found[0])
     result = {"count": len(found), "entities": found}
-    if len(found) == 1:
-        result.update(found[0])
     if missing:
         result["missing"] = missing
     return ok(result)
@@ -680,11 +678,7 @@ def _do_template(client, a):
     if not template or not str(template).strip():
         return error("template 需要 arguments.template", code="missing_argument")
     value = _render_template(client, str(template))
-    text = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)
-    result = {"result": value}
-    if text != json.dumps(value, ensure_ascii=False) or isinstance(value, str):
-        result["text"] = text
-    return ok(result)
+    return ok({"result": value})
 
 
 def _do_config(client, _a):

@@ -280,9 +280,7 @@ def _do_forums(client, a):
                  "传入 keyword 查询具体版块，如 {\"action\": \"forums\", \"keyword\": \"晴风村\"}", ""]
         for category, count in counts.items():
             lines.append(f"- {category}：{count} 个")
-        return ok({"count": len(forums),
-                   "categories": [{"name": k, "count": v} for k, v in counts.items()],
-                   "text": "\n".join(lines)})
+        return ok({"text": "\n".join(lines)})
 
     lower = keyword.lower()
     exact, prefix, contains = [], [], []
@@ -296,8 +294,7 @@ def _do_forums(client, a):
             contains.append(forum)
     matches = exact + prefix + contains
     if not matches:
-        return ok({"keyword": keyword, "count": 0, "forums": [],
-                   "text": f"未找到匹配「{keyword}」的版块"})
+        return ok({"text": f"未找到匹配「{keyword}」的版块"})
 
     limit = _as_int(a.get("limit"), 20)
     shown = matches[:limit]
@@ -309,8 +306,7 @@ def _do_forums(client, a):
     if len(matches) > len(shown):
         lines.append("")
         lines.append(f"（共 {len(matches)} 个匹配，仅显示前 {len(shown)} 个）")
-    return ok({"keyword": keyword, "count": len(matches), "forums": shown,
-               "text": "\n".join(lines)})
+    return ok({"text": "\n".join(lines)})
 
 
 def _do_threads(client, a):
@@ -344,8 +340,7 @@ def _do_threads(client, a):
         lines.append(f"\n[{idx}] {t['subject']}")
         lines.append(f"    author={t['author']} replies={t['replies']} date={t['postdate']} tid={t['tid']}")
     lines.append(f"\n--- 第 {page}/{total_pages} 页 ---")
-    return ok({"forum": name, "page": page, "total_pages": total_pages, "total": total,
-               "threads": items, "text": "\n".join(lines)})
+    return ok({"text": "\n".join(lines)})
 
 
 def _do_posts(client, a):
@@ -408,8 +403,7 @@ def _do_posts(client, a):
     if data.get("_truncated"):
         lines.append("（注：NGA 返回被截断，仅显示已完整返回的楼层）")
     lines.append(f"--- 第 {page}/{total_pages} 页 ---")
-    return ok({"tid": tid, "subject": subject, "page": page, "total_pages": total_pages,
-               "truncated": bool(data.get("_truncated")), "replies": items, "text": "\n".join(lines)})
+    return ok({"text": "\n".join(lines)})
 
 
 def _do_search(client, a):
@@ -424,15 +418,14 @@ def _do_search(client, a):
     if not rows:
         f_data = d.get("__F")
         if f_data and f_data.get("fid") and f_data.get("name"):
-            return ok({"keyword": keyword, "forums": [{"fid": f_data["fid"], "name": f_data["name"]}],
-                       "text": f"  {f_data['name']:40s} fid={f_data['fid']}"})
-        return ok({"keyword": keyword, "forums": [], "text": f"未找到版块: '{keyword}'"})
+            return ok({"text": f"  {f_data['name']:40s} fid={f_data['fid']}"})
+        return ok({"text": f"未找到版块: '{keyword}'"})
 
     forums = [{"fid": r.get("fid", "?"), "name": r.get("name", "?")}
               for r in (results.get(str(i)) for i in range(rows)) if r]
     lines = [f"搜索 '{keyword}' 结果:"]
     lines += [f"  {f['name']:40s} fid={f['fid']}" for f in forums]
-    return ok({"keyword": keyword, "forums": forums, "text": "\n".join(lines)})
+    return ok({"text": "\n".join(lines)})
 
 
 def _do_login(client, a):
@@ -441,7 +434,7 @@ def _do_login(client, a):
         return error("action=login 需要 cookie（或设置 NGA_COOKIE）", code="invalid_argument")
     client.session.cookies.update(_parse_cookie(cookie))
     path = client.save_cookies()
-    return ok({"cookie_file": path, "text": f"✅ 已保存登录 Cookie → {path}"})
+    return ok({"text": f"✅ 已保存登录 Cookie → {path}"})
 
 
 def run(arguments):

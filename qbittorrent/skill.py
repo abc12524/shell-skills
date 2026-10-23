@@ -411,9 +411,7 @@ def _do_add(client, a):
     for idx, (src, h) in enumerate(zip(sources, result["hashes"]), 1):
         shown = src if len(src) <= 80 else src[:77] + "..."
         lines.append("| %d | %s | %s |" % (idx, _md_cell(shown), h or "-"))
-    return ok({"action": "add", "count": result["count"], "hashes": result["hashes"],
-               "save_path": save_path, "category": category, "paused": paused,
-               "sources": sources, "text": "\n".join(lines)})
+    return ok({"text": "\n".join(lines)})
 
 
 def _do_list(client, a):
@@ -520,24 +518,14 @@ def _do_delete(client, a):
                                           str(t.get("name") or "")))
 
     total = sum(int(t.get("size") or 0) for t in targets)
-    payload = {
-        "action": "delete", "count": len(targets), "delete_files": delete_files,
-        "dry_run": dry_run, "total_bytes": total, "total_size": _human_size(total),
-        "before": before, "after": after, "filter": filter_by, "category": a.get("category"),
-        "hashes": [t.get("hash") for t in targets],
-        "names": [t.get("name") for t in targets],
-    }
     if not targets:
-        payload["text"] = "没有匹配的任务，未执行删除"
-        return ok(payload)
+        return ok({"text": "没有匹配的任务，未执行删除"})
     if dry_run:
-        payload["text"] = ("将删除 %d 个任务，合计 %s（试运行，未执行）\n\n"
-                           % (len(targets), _human_size(total))) + _markdown_table(targets, True)
-        return ok(payload)
+        return ok({"text": ("将删除 %d 个任务，合计 %s（试运行，未执行）\n\n"
+                            % (len(targets), _human_size(total))) + _markdown_table(targets, True)})
     client.delete_many([t["hash"] for t in targets], delete_files)
-    payload["text"] = "已删除 %d 个任务，合计 %s（delete_files=%s）" % (
-        len(targets), _human_size(total), "true" if delete_files else "false")
-    return ok(payload)
+    return ok({"text": "已删除 %d 个任务，合计 %s（delete_files=%s）" % (
+        len(targets), _human_size(total), "true" if delete_files else "false")})
 
 
 _ACTIONS = {

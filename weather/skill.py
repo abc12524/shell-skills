@@ -283,29 +283,24 @@ def run(arguments):
     except WeatherError as e:
         return error(str(e), code=e.code)
 
-    result = {
-        "location": location,
-        "place": place_name(data, location),
-        "days": days,
-        "format": fmt,
-    }
-
     if fmt == "json":
         cur = (data.get("current_condition") or [{}])[0]
-        result["current"] = {
-            "desc": describe_code(cur.get("weatherCode", "")),
-            "tempC": cur.get("temp_C"),
-            "feelsLikeC": cur.get("FeelsLikeC"),
-            "humidity": cur.get("humidity"),
-            "windspeedKmph": cur.get("windspeedKmph"),
-            "observationTime": cur.get("localObsDateTime"),
-        }
-        result["forecast"] = [day_summary(d, i) for i, d in enumerate(selected)]
-        return ok(result)
+        return ok({
+            "location": location,
+            "place": place_name(data, location),
+            "days": days,
+            "current": {
+                "desc": describe_code(cur.get("weatherCode", "")),
+                "tempC": cur.get("temp_C"),
+                "feelsLikeC": cur.get("FeelsLikeC"),
+                "humidity": cur.get("humidity"),
+                "windspeedKmph": cur.get("windspeedKmph"),
+                "observationTime": cur.get("localObsDateTime"),
+            },
+            "forecast": [day_summary(d, i) for i, d in enumerate(selected)],
+        })
 
     text = fmt_oneline(data, location) if fmt == "text" else build_markdown(data, location, days)
-    result["text"] = text
-    result["chars"] = len(text)
 
     if output:
         try:
@@ -313,9 +308,9 @@ def run(arguments):
                 f.write(text if fmt == "markdown" else text + "\n")
         except OSError as e:
             return error(f"写入 {output} 失败: {e}", code="io_error")
-        result["saved_to"] = output
+        text += f"\n\n已保存 → {output}"
 
-    return ok(result)
+    return ok({"text": text})
 
 
 def parse_args():
@@ -357,8 +352,6 @@ def main():
         print(json.dumps(res, ensure_ascii=False, indent=2))
     else:
         print(res.get("text", ""))
-        if res.get("saved_to"):
-            print(f"✅ 已写入 {res['saved_to']}")
     return 0
 
 
