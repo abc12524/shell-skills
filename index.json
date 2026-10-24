@@ -55,6 +55,16 @@
       "config": ["FEEDCOOP_API_KEY"]
     },
     {
+      "name": "douyin_down",
+      "description": "抖音分享链接解析与下载：短链跟随 / 作品元数据 / 视频画质选择 / 视频·图集下载（需 DOUYIN_COOKIE）",
+      "platform": ["linux", "windows", "android", "ios"],
+      "path": "douyin_down",
+      "entry": "skill.py",
+      "version": "1.0.0",
+      "requires": ["requests"],
+      "config": ["DOUYIN_COOKIE", "DOUYIN_WEBID", "DOUYIN_MS_TOKEN", "DOUYIN_OUT_DIR"]
+    },
+    {
       "name": "dustls",
       "description": "磁盘占用分析（dust 的纯数据输出：整数字节 + 全路径，LLM 友好）",
       "platform": ["linux", "windows"],

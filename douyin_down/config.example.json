@@ -1,0 +1,6 @@
+{
+  "DOUYIN_COOKIE": "UIFID=xxx; s_v_web_id=verify_xxx; passport_csrf_token=xxx; ...",
+  "DOUYIN_WEBID": "",
+  "DOUYIN_MS_TOKEN": "",
+  "DOUYIN_OUT_DIR": ""
+}

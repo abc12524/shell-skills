@@ -18,6 +18,7 @@ shell-skills/
 ├── baidu_search/       百度搜索 / 百科查询
 ├── deepseek_search/    DeepSeek 网页搜索 / 抓取（官方自研搜索引擎）
 ├── doubao_search/      Feedcoop 豆包搜索 API（web_search / global_search）
+├── douyin_down/        抖音分享链接解析与下载（短链 / 作品信息 / 画质选择 / 视频·图集）
 ├── dustls/             磁盘占用分析（dust 纯数据输出，LLM 友好）
 ├── exif/               图片 EXIF 工具（读取 / 移除 GPS / 移除全部 / 写入 / 备注）
 ├── ftp/                FTP/FTPS 文件传输（ftplib，兼容 vsftpd：上传 / 下载 / 删除 / 列表）
