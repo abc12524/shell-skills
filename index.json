@@ -62,7 +62,7 @@
       "entry": "skill.py",
       "version": "1.0.0",
       "requires": ["requests"],
-      "config": ["DOUYIN_COOKIE", "DOUYIN_WEBID", "DOUYIN_MS_TOKEN", "DOUYIN_OUT_DIR"]
+      "config": ["DOUYIN_COOKIE", "DOUYIN_WEBID", "DOUYIN_MS_TOKEN", "DOUYIN_OUT_DIR", "DOUYIN_UA", "DOUYIN_SCREEN_WIDTH", "DOUYIN_SCREEN_HEIGHT", "DOUYIN_CPU_CORE_NUM", "DOUYIN_DEVICE_MEMORY"]
     },
     {
       "name": "dustls",

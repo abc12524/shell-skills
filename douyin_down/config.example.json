@@ -2,5 +2,10 @@
   "DOUYIN_COOKIE": "UIFID=xxx; s_v_web_id=verify_xxx; passport_csrf_token=xxx; ...",
   "DOUYIN_WEBID": "",
   "DOUYIN_MS_TOKEN": "",
-  "DOUYIN_OUT_DIR": ""
+  "DOUYIN_OUT_DIR": "",
+  "DOUYIN_UA": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36",
+  "DOUYIN_SCREEN_WIDTH": "2560",
+  "DOUYIN_SCREEN_HEIGHT": "1440",
+  "DOUYIN_CPU_CORE_NUM": "20",
+  "DOUYIN_DEVICE_MEMORY": "32"
 }
