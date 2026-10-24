@@ -205,6 +205,16 @@
       "config": []
     },
     {
+      "name": "skill_config",
+      "description": "给指定 skill 添加/查看/删除配置项：用户提供键值，自动写入 config.json、config.example.json 与 index.json，并可注入读取逻辑",
+      "platform": ["linux", "windows", "android", "ios"],
+      "path": "skill_config",
+      "entry": "skill.py",
+      "version": "1.0.0",
+      "requires": [],
+      "config": []
+    },
+    {
       "name": "skill_guide",
       "description": "如何编写 skill：规范、要求与示例（内置 skill_README.md）",
       "platform": ["linux", "windows", "android", "ios"],

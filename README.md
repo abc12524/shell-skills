@@ -33,6 +33,7 @@ shell-skills/
 ├── qbittorrent/        qBittorrent 下载管理（新建 / 列表 / 详情 / 暂停 / 继续 / 删除）
 ├── s1/                 Stage1st 论坛浏览（版块 / 帖子 / 回复 / 登录）
 ├── script/             脚本/代码增删改查 + 结构骨架
+├── skill_config/       给指定 skill 添加配置项（用户给键值；联动 config.json / index.json，可注入读取逻辑）
 ├── skill_guide/        如何编写 skill：规范、要求与示例（内置 skill_README.md）
 ├── smb/                SMB/CIFS 文件传输（smbprotocol：上传 / 下载 / 删除 / 列表）
 ├── ssh/                SSH 远程执行与 SCP 文件传输（paramiko：exec / 上传 / 下载）
