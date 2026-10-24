@@ -2,7 +2,7 @@
 # description: 抖音分享链接解析与下载（视频 / 图集，可选画质）
 # status: enable
 # usage:
-#   arguments.action = download（默认，解析并下载）| parse（只看元数据）| qualities（列画质）
+#   arguments.action = download（默认）| parse（元数据）| qualities（列画质）| list（核对本地文件）
 #   arguments.share = 分享文案 / v.douyin.com 短链 / 作品 URL（必填）
 #   arguments.quality = best（默认，最高画质）| h264 | 2160 | 1440 | 1080 | 720 | 540
 #   arguments.media = auto（默认）| video | image | all；out_dir（默认技能目录）/ timeout
@@ -82,6 +82,50 @@ def _qualities_action(work, detail):
     })
 
 
+def _expected_files(info):
+    if info.get("work_type") == "图集":
+        return [f"image_{index}.jpg" for index in range(len(info.get("images") or []))]
+    names = []
+    if info.get("video_cover"):
+        names.append("cover.jpg")
+    if info.get("video_addr"):
+        names.append("video.mp4")
+    return names
+
+
+def _list_action(out_dir, work_id, limit):
+    items = []
+    if os.path.isdir(out_dir):
+        for root, dirs, files in os.walk(out_dir):
+            dirs[:] = [name for name in dirs if not name.startswith(".")]
+            if "info.json" not in files:
+                continue
+            dirs[:] = []
+            try:
+                with open(os.path.join(root, "info.json"), encoding="utf-8") as f:
+                    info = json.load(f)
+            except (OSError, ValueError):
+                continue
+            current = str(info.get("work_id") or "")
+            if work_id and current != work_id:
+                continue
+            media = sorted(name for name in files if name != "info.json")
+            expected = _expected_files(info)
+            items.append({
+                "work_id": current,
+                "work_type": info.get("work_type"),
+                "files": media,
+                "missing": [name for name in expected if name not in media],
+                "size_mb": round(sum(os.path.getsize(os.path.join(root, name))
+                                     for name in media) / 1048576, 1),
+                "saved_dir": root,
+            })
+    items.sort(key=lambda item: item["work_id"], reverse=True)
+    if limit > 0:
+        items = items[:limit]
+    return ok({"count": len(items), "items": items})
+
+
 def _download_action(work, detail, quality, media, out_dir, timeout):
     if work["work_type"] == "图集" and media == "video":
         return error("该作品是图集，没有视频可下载；改用 media=image 或 auto",
@@ -118,11 +162,16 @@ def run(arguments):
     _load_config()
     args = arguments or {}
     action = str(args.get("action") or "download").strip().lower()
-    if action not in ("download", "parse", "qualities"):
+    if action not in ("download", "parse", "qualities", "list"):
         return error(
-            f"未知 action '{action}'，可用: download / parse / qualities",
+            f"未知 action '{action}'，可用: download / parse / qualities / list",
             code="unknown_action",
         )
+    out_dir = str(args.get("out_dir") or "").strip() or _default_out_dir()
+    out_dir = os.path.abspath(os.path.expanduser(out_dir))
+    if action == "list":
+        return _list_action(out_dir, str(args.get("work_id") or "").strip(),
+                            int(_as_float(args.get("limit"), 50)))
     share = str(args.get("share") or "").strip()
     if not share:
         return error("缺少参数 share（分享文案 / 短链 / 作品 URL）",
@@ -137,8 +186,6 @@ def run(arguments):
         return error(f"未知 media '{media}'，可用: auto / video / image / all",
                      code="invalid_argument")
     timeout = _as_float(args.get("timeout"), 20)
-    out_dir = str(args.get("out_dir") or "").strip() or _default_out_dir()
-    out_dir = os.path.abspath(os.path.expanduser(out_dir))
 
     try:
         share_url = _impl.extract_share_url(share)
