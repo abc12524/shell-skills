@@ -28,6 +28,7 @@ shell-skills/
 ├── nga/                NGA 论坛浏览（版块查询 / 帖子 / 回复 / 搜索 / 登录）
 ├── objstore/           对象存储（S3 兼容）：上传 / 下载 / 删除 / 列表 / 复制 / 预签名
 ├── ov/                 OpenViking 外置记忆统一入口（搜索 / 写入 / 读取 / 遗忘）
+├── pngenc/             PNG 工具：draw / encode / decode（Pillow 抗锯齿/文字仅桌面，移动端不可用）
 ├── qbittorrent/        qBittorrent 下载管理（新建 / 列表 / 详情 / 暂停 / 继续 / 删除）
 ├── s1/                 Stage1st 论坛浏览（版块 / 帖子 / 回复 / 登录）
 ├── script/             脚本/代码增删改查 + 结构骨架
@@ -39,6 +40,7 @@ shell-skills/
 ├── token_count/        DeepSeek V4 token 计数（直接文本 / 文件路径，纯 Python 零依赖）
 ├── transmission/       Transmission 下载管理（新建 / 列表 / 详情 / 暂停 / 继续 / 删除）
 ├── tplink_ptz/         TP-Link 摄像头 PTZ 云台控制
+├── tts/                Edge TTS 语音合成（文字转 MP3，支持音色 / 语速 / 音量 / 音调）
 ├── wait/               等待指定秒数（最长 600 秒）
 └── weather/            wttr.in 天气查询（默认武汉）
 ```
