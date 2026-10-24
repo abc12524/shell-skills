@@ -135,6 +135,16 @@
       "config": ["MAIL_PROVIDER", "MAIL_USER", "MAIL_PASS", "MAIL_CA_BUNDLE"]
     },
     {
+      "name": "mysql",
+      "description": "MySQL / MariaDB 客户端（多主机切换 / 只读查询 / 写入 / 元数据 / 诊断，四端通用）",
+      "platform": ["linux", "windows", "android", "ios"],
+      "path": "mysql",
+      "entry": "skill.py",
+      "version": "1.0.1",
+      "requires": ["pymysql"],
+      "config": ["MYSQL_HOST", "MYSQL_PORT", "MYSQL_USER", "MYSQL_PASSWORD", "MYSQL_DB"]
+    },
+    {
       "name": "nga",
       "description": "NGA 论坛（bbs.nga.cn）浏览：版块查询（关键词）/ 帖子列表 / 帖子回复 / 版块搜索 / 登录",
       "platform": ["linux", "windows", "android", "ios"],

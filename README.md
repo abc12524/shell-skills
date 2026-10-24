@@ -26,6 +26,7 @@ shell-skills/
 ├── huawei_switch/      华为 VRP 设备常驻会话客户端（视图切换 / port 状态 / Y/N 需显式应答；仅 Linux）
 ├── llm_balance/        大模型平台余额查询（火山引擎 / 智谱 BigModel / DeepSeek）
 ├── mail/               多邮箱通用工具（列收件箱 / 读邮件 / 发邮件 / 查未读）
+├── mysql/              MySQL 客户端（多主机）：只读查询 / 写操作 / 库表结构 / 状态诊断
 ├── nga/                NGA 论坛浏览（版块查询 / 帖子 / 回复 / 搜索 / 登录）
 ├── objstore/           对象存储（S3 兼容）：上传 / 下载 / 删除 / 列表 / 复制 / 预签名
 ├── ov/                 OpenViking 外置记忆统一入口（搜索 / 写入 / 读取 / 遗忘）

@@ -1,0 +1,25 @@
+{
+  "default_host": "local",
+  "max_rows": 200,
+  "timeout": 10,
+  "hosts": {
+    "local": {
+      "host": "127.0.0.1",
+      "port": 3306,
+      "user": "root",
+      "password": "your-mysql-password",
+      "database": "",
+      "charset": "utf8mb4",
+      "readonly": false
+    },
+    "remote": {
+      "host": "192.168.1.10",
+      "port": 3306,
+      "user": "app_reader",
+      "password": "your-reader-password",
+      "database": "example_db",
+      "charset": "utf8mb4",
+      "readonly": true
+    }
+  }
+}
