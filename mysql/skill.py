@@ -10,6 +10,8 @@
 #   通用参数：host = config 主机名，可数组或 "all"（默认 default_host）；database 覆盖默认库；
 #     limit 行数上限（默认 config.max_rows，0=不限）；format = text|json；timeout 秒
 #   query / exec 额外：sql（单条；占位符 %s 配 params 数组）
+#   readonly 主机：exec 拒绝；query 另拦 SELECT ... INTO OUTFILE/DUMPFILE、FOR UPDATE、
+#     LOCK IN SHARE MODE（读接口的写副作用）
 #   示例: {"action": "query", "host": "local", "sql": "SELECT * FROM t WHERE id = %s", "params": [7]}
 #         {"action": "exec", "host": "local", "sql": "UPDATE t SET a = 1 WHERE id = 7", "confirm": true}
 #
@@ -55,6 +57,11 @@ TITLES = {
     "status": "状态 / 变量", "processlist": "当前连接",
 }
 _LITERAL_RE = re.compile(r"'(?:\\.|[^'\\])*'|\"(?:\\.|[^\"\\])*\"")
+_COMMENT_RE = re.compile(r"--[^\n]*|#[^\n]*|/\*.*?\*/", re.DOTALL)
+# 只读主机上 query 也要拦的写副作用：导出文件 / 加锁读
+_RISKY_READ_RE = re.compile(
+    r"\binto\s+(?:outfile|dumpfile)\b|\bfor\s+update\b|\block\s+in\s+share\s+mode\b",
+    re.IGNORECASE)
 
 
 class _SkillError(Exception):
@@ -149,6 +156,11 @@ def _quote_ident(name):
 def _strip_literals(sql):
     """把字符串字面量替换成空占位，便于做关键字与分号检查。"""
     return _LITERAL_RE.sub("''", sql)
+
+
+def _masked(sql):
+    """字面量 + 注释都抹掉后的 SQL，用于分号 / 关键字 / 危险模式扫描。"""
+    return _COMMENT_RE.sub(" ", _strip_literals(sql))
 
 
 def _leading_keyword(sql):
@@ -283,8 +295,9 @@ def _require_sql(args):
 
 
 def _assert_single(sql):
-    """拒绝一次提交多条语句（去掉字面量后仍出现分号即视为多条）。"""
-    if ";" in _strip_literals(sql):
+    """拒绝一次提交多条语句（去掉字面量与注释后，分号后仍有内容即视为多条；
+    末尾孤立的分号如 'SELECT 1; -- note' 不算）。"""
+    if re.search(r";\s*\S", _masked(sql)):
         raise _SkillError("一次只允许一条语句（检测到分号分隔的多条 SQL）", "invalid_argument")
     return sql
 
@@ -293,12 +306,13 @@ def _apply_limit(sql, limit):
     """只读查询未自带 LIMIT 时补一个，避免整表回传。
 
     补的是 limit+1：多取的那一行用于可靠地判断结果是否被截断。
+    LIMIT 前换行，防止行尾 -- / # 注释把它吞掉。
     """
     if limit <= 0 or _leading_keyword(sql) not in LIMITABLE_KEYWORDS:
         return sql
-    if re.search(r"\blimit\b", _strip_literals(sql), re.IGNORECASE):
+    if re.search(r"\blimit\b", _masked(sql), re.IGNORECASE):
         return sql
-    return f"{sql.rstrip().rstrip(';')} LIMIT {int(limit) + 1}"
+    return f"{sql.rstrip().rstrip(';')}\nLIMIT {int(limit) + 1}"
 
 
 def _params_of(args):
@@ -398,11 +412,11 @@ def _run_all(hosts, sql, database, limit, timeout, params=None):
 
 # ============= 渲染 ============
 def _render_table(columns, rows):
-    """等宽文本表格（长值截断，NULL 显式标注）。"""
+    """等宽文本表格：只按内容实际宽度对齐，不画分隔行，长值截断、NULL 显式标注。"""
     if not columns:
         return ""
     body = [[_cell_text(row.get(c)) for c in columns] for row in rows]
-    widths = [min(_text_width(c), CELL_MAX) for c in columns]
+    widths = [min(_text_width(str(c)), CELL_MAX) for c in columns]
     for line in body:
         for i, text in enumerate(line):
             widths[i] = max(widths[i], min(_text_width(text), CELL_MAX))
@@ -410,32 +424,36 @@ def _render_table(columns, rows):
     def fmt(cells):
         return " | ".join(_pad(_clip(text, widths[i]), widths[i]) for i, text in enumerate(cells))
 
-    out = [fmt([str(c) for c in columns]), "-+-".join("-" * w for w in widths)]
+    out = [fmt([str(c) for c in columns])]
     out.extend(fmt(line) for line in body)
     return "\n".join(out)
 
 
 def _render(title, results, limit):
-    """多主机结果渲染：每台主机一段，失败单独标注。"""
+    """多主机结果渲染：每台主机一段，行首带元信息，失败单独标注。
+
+    面向 LLM 阅读优化：结构扁平、每段自带"列×行（截断）"摘要，无冗余分隔线。
+    """
     ok_count = sum(1 for r in results if r.get("ok"))
-    lines = [f"【{title}】共 {len(results)} 台主机，成功 {ok_count} 台"]
+    lines = [f"【{title}】{ok_count}/{len(results)} 台成功"]
     for res in results:
         lines.append("")
-        head = f"── {res['host']}  ({res['server']})"
+        head = f"── {res['host']} ({res['server']})"
         if res.get("elapsed_ms") is not None:
-            head += f"  {res['elapsed_ms']}ms"
-        lines.append(head)
+            head += f" {res['elapsed_ms']}ms"
         if not res.get("ok"):
-            lines.append(f"  ✗ {res.get('error') or '执行失败'}")
+            lines += [head, f"  ✗ {res.get('error') or '执行失败'}"]
             continue
         if not res.get("columns"):
-            lines.append(f"  ✓ 影响 {res.get('affected_rows', 0)} 行")
+            lines += [head, f"  ✓ 影响 {res.get('affected_rows', 0)} 行"]
             continue
-        lines.append(_render_table(res["columns"], res["rows"]))
-        note = f"  {res['row_count']} 行"
+        meta = f"{len(res['columns'])}列×{res['row_count']}行"
         if res.get("truncated"):
-            note += f"（已截断，limit={limit}；需要更多请调大 limit 或加 WHERE）"
-        lines.append(note)
+            meta += "（截断）"
+        lines.append(head + " · " + meta)
+        lines.append(_render_table(res["columns"], res["rows"]) or "  (0 行)")
+        if res.get("truncated"):
+            lines.append(f"  … 仅前 {res['row_count']} 行（limit={limit}；可加 WHERE 或调大 limit）")
     return "\n".join(lines).strip()
 
 
@@ -543,6 +561,11 @@ def run(arguments):
             if _leading_keyword(sql) not in READ_KEYWORDS:
                 return error("query 只接受只读语句（SELECT / SHOW / DESC / EXPLAIN / WITH）；"
                              "写操作请用 action=exec", code="invalid_argument")
+            locked = [h["name"] for h in hosts if h["readonly"]]
+            if locked and _RISKY_READ_RE.search(_masked(sql)):
+                return error("主机为只读（config readonly=true），该语句含写副作用"
+                             "（INTO OUTFILE / FOR UPDATE / LOCK IN SHARE MODE）："
+                             + ", ".join(locked), code="invalid_argument")
             results = _run_all(hosts, _apply_limit(sql, limit), database, limit, timeout,
                                _params_of(args))
         elif action == "exec":

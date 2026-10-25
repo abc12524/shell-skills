@@ -140,7 +140,7 @@
       "platform": ["linux", "windows", "android", "ios"],
       "path": "mysql",
       "entry": "skill.py",
-      "version": "1.0.1",
+      "version": "1.0.2",
       "requires": ["pymysql"],
       "config": ["MYSQL_HOST", "MYSQL_PORT", "MYSQL_USER", "MYSQL_PASSWORD", "MYSQL_DB"]
     },
