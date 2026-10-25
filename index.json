@@ -175,6 +175,16 @@
       "config": ["OPENVIKING_URL", "OPENVIKING_KEY", "OPENVIKING_USER", "OPENVIKING_AGENT", "OV_SEARCH_THRESHOLD", "OV_SEARCH_LIMIT", "OV_FIND_THRESHOLD", "OV_FIND_LIMIT"]
     },
     {
+      "name": "phone_thermal",
+      "description": "读取手机各部位温度（电池 / 屏幕 / 主板 / CPU / GPU / 摄像头等，℃），按温度降序（仅 Android）",
+      "platform": ["android"],
+      "path": "phone_thermal",
+      "entry": "skill.py",
+      "version": "1.0.0",
+      "requires": [],
+      "config": []
+    },
+    {
       "name": "pngenc",
       "description": "PNG 工具：draw 画图 / encode / decode（零依赖；Pillow 抗锯齿/文字仅桌面，移动端不可用）",
       "platform": ["linux", "windows", "android", "ios"],
