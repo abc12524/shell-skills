@@ -16,17 +16,20 @@
 #     goto                    转到预置点，需 arguments.id
 #     save                    保存当前位姿为预置点，需 arguments.name
 #     delete                  删除预置点，需 arguments.id
-#   arguments.camera = 摄像头标识：节名(camera1) / 别名(前院) / IP（list 可省略）
+#   arguments.camera = 摄像头标识：键名(camera1) / 别名(前院) / IP（list 可省略；默认取配置 default_camera）
 #   arguments.speed  = 速度 0~1（默认读配置 default_speed=0.6）
 #   arguments.seconds= 方向转动时长秒（默认读配置 default_duration=2.0）
 #   arguments.pan / tilt / zoom = 位置或位移 -1~1（relative / absolute）
 #   arguments.id     = 预置点编号（goto / delete）
 #   arguments.name   = 预置点名称（save）
-#   arguments.config = 可选，配置文件路径（默认同目录 tplink.conf）
+#   arguments.config = 可选，配置文件路径（默认同目录 config.json，模板 config.example.json）
+#   配置结构: {"timeout": 8, "default_speed": 0.6, "default_duration": 2.0, "default_camera": "camera1",
+#              "cameras": {"camera1": {"name": "前院", "ip": "192.168.1.10", "port": 80,
+#                                      "username": "admin", "password": "***"}}}
 #   示例: {"action": "list"}
 #   示例: {"action": "right", "camera": "前院", "speed": 0.6, "seconds": 2}
 #   示例: {"action": "goto", "camera": "camera1", "id": 3}
-import configparser
+import json
 import os
 import time
 
@@ -62,7 +65,7 @@ _VALID_ACTIONS = ("info", "status", "left", "right", "up", "down", "stop",
 
 
 def _default_config():
-    return os.path.join(os.path.dirname(os.path.abspath(__file__)), "tplink.conf")
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
 
 
 def security_encode(password, key=TP_LINK_KEY, charset=TP_LINK_CHARSET):
@@ -198,25 +201,42 @@ class TplinkCamera:
             self.stop()
 
 
-def load_cameras(config_file):
+def load_config(config_file):
+    """读 config.json（模板 config.example.json）：标量默认值 + cameras 多实例。"""
     if not os.path.exists(config_file):
-        raise FileNotFoundError(f"配置文件不存在: {config_file}")
-    cp = configparser.ConfigParser()
-    cp.read(config_file, encoding="utf-8")
+        raise FileNotFoundError(f"配置文件不存在: {config_file}（模板见 config.example.json）")
+    with open(config_file, encoding="utf-8") as fh:
+        try:
+            cfg = json.load(fh)
+        except ValueError as exc:
+            raise ValueError(f"配置文件不是合法 JSON: {config_file}: {exc}") from exc
+    if not isinstance(cfg, dict):
+        raise ValueError("config.json 顶层必须是 JSON 对象")
+    return cfg
 
-    timeout = cp.getfloat("general", "timeout", fallback=8)
 
+def load_cameras(cfg):
+    timeout = cfg.get("timeout")
+    timeout = 8 if timeout is None else timeout
+    items = cfg.get("cameras") or {}
+    if not isinstance(items, dict):
+        raise ValueError("config.json 的 cameras 必须是对象：{键名: {ip, ...}}")
+    if not items:
+        raise ValueError("config.json 的 cameras 为空，先配一台摄像头（见 config.example.json）")
     cameras = {}
-    for section in cp.sections():
-        if section == "general":
-            continue
+    for section, item in items.items():
+        if not isinstance(item, dict):
+            raise ValueError(f"摄像头 {section} 的配置必须是对象")
+        ip = str(item.get("ip") or "").strip()
+        if not ip:
+            raise ValueError(f"摄像头 {section} 缺少 ip")
         cameras[section] = TplinkCamera(
             section=section,
-            name=cp.get(section, "name", fallback=section),
-            ip=cp.get(section, "ip").strip(),
-            port=cp.getint(section, "port", fallback=80),
-            username=cp.get(section, "username", fallback="admin"),
-            password=cp.get(section, "password", fallback=""),
+            name=item.get("name") or section,
+            ip=ip,
+            port=item.get("port", 80),
+            username=item.get("username", "admin"),
+            password=str(item.get("password") or ""),
             timeout=timeout,
         )
     return cameras
@@ -224,7 +244,8 @@ def load_cameras(config_file):
 
 def resolve_camera(cameras, key):
     if key is None:
-        raise KeyError("缺少 camera（节名/别名/IP）")
+        raise KeyError("缺少 camera（键名/别名/IP），且配置里没有 default_camera")
+    key = str(key).strip()  # JSON 里传数字也行（3 -> camera3）
     if key in cameras:
         return cameras[key]
     for cam in cameras.values():
@@ -237,38 +258,37 @@ def resolve_camera(cameras, key):
 
 
 def run(arguments):
-    a = arguments or {}
-    action = (a.get("action") or "").strip()
+    a = arguments if isinstance(arguments, dict) else {}
+    action = str(a.get("action") or "").strip()
+
+    if not action:
+        return error("缺少 action", code="missing_argument")
+    if action != "list" and action not in _VALID_ACTIONS:
+        return error(f"未知 action '{action}'", code="unknown_action")
+
+    try:
+        cfg = load_config(a.get("config") or _default_config())
+        cameras = load_cameras(cfg)
+    except Exception as e:
+        return error(str(e), code="config_error")
 
     if action == "list":
-        try:
-            cameras = load_cameras(a.get("config") or _default_config())
-        except Exception as e:
-            return error(str(e), code="config_error")
         return ok({
             "count": len(cameras),
+            "default_camera": cfg.get("default_camera"),
             "cameras": [
                 {"section": sec, "name": cam.name, "ip": cam.ip, "port": cam.port}
                 for sec, cam in cameras.items()
             ],
         })
 
-    if not action:
-        return error("缺少 action", code="missing_argument")
-    if action not in _VALID_ACTIONS:
-        return error(f"未知 action '{action}'", code="unknown_action")
+    speed_cfg = cfg.get("default_speed")
+    seconds_cfg = cfg.get("default_duration")
+    default_speed = 0.6 if speed_cfg is None else float(speed_cfg)
+    default_seconds = 2.0 if seconds_cfg is None else float(seconds_cfg)
 
     try:
-        cp = configparser.ConfigParser()
-        cp.read(a.get("config") or _default_config(), encoding="utf-8")
-        default_speed = cp.getfloat("general", "default_speed", fallback=0.6) if cp.has_section("general") else 0.6
-        default_seconds = cp.getfloat("general", "default_duration", fallback=2.0) if cp.has_section("general") else 2.0
-        cameras = load_cameras(a.get("config") or _default_config())
-    except Exception as e:
-        return error(str(e), code="config_error")
-
-    try:
-        cam = resolve_camera(cameras, a.get("camera"))
+        cam = resolve_camera(cameras, a.get("camera") or cfg.get("default_camera"))
     except KeyError as e:
         return error(str(e), code="unknown_camera")
 
@@ -366,7 +386,7 @@ def _cli():
     import json
 
     p = argparse.ArgumentParser(description="TP-Link 摄像头 PTZ 云台控制")
-    p.add_argument("-c", "--config", default=None, help="配置文件路径 (默认: 同目录 tplink.conf)")
+    p.add_argument("-c", "--config", default=None, help="配置文件路径 (默认: 同目录 config.json)")
     p.add_argument("camera", nargs="?", help="摄像头(节名/别名/IP)，或 list")
     p.add_argument("action", nargs="?", default="list")
     p.add_argument("--speed", type=float, default=None)

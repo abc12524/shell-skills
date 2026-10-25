@@ -12,7 +12,8 @@
 
 认证只从环境变量读取（由 skill.py 从同目录 config.json 注入）：
 
-    DOUYIN_COOKIE    完整 Cookie 头（必填，至少包含 UIFID）
+    DOUYIN_COOKIE    完整 Cookie 头，或指向 Cookie 文件的路径（必填，至少包含 UIFID）
+                     路径按技能目录解析，如 "cookie.txt"；写过路径后 cookie 内容就放文件里
     DOUYIN_WEBID     可选；不填则用 query/user 接口换真实 webid
     DOUYIN_MS_TOKEN  可选；不填则生成随机 msToken
 
@@ -67,6 +68,26 @@ _DEFAULT_DEVICE_MEMORY = "32"
 
 def _env(key, default):
     return (os.getenv(key) or "").strip() or default
+
+
+def _resolve_cookie(value):
+    """DOUYIN_COOKIE 支持两种写法：原始 Cookie 串，或指向 Cookie 文件的路径。
+
+    - 含 "=" 视为 Cookie 串本身（旧写法，保持兼容）；
+    - 否则当作路径，相对路径按技能目录（本文件所在目录）解析，读文件内容。
+    """
+    value = (value or "").strip()
+    if not value or "=" in value:
+        return value
+    path = value if os.path.isabs(value) else os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), value)
+    if not os.path.isfile(path):
+        raise RuntimeError(
+            "DOUYIN_COOKIE 不是 Cookie 串（不含 =），也找不到该文件: %s" % path)
+    with open(path, encoding="utf-8") as fh:
+        text = fh.read()
+    # 允许存成一行或多行（硬换行）：按行去空白后用空格拼回单行
+    return " ".join(part.strip() for part in text.splitlines() if part.strip())
 
 
 def profile():
@@ -832,12 +853,12 @@ class DouyinClient:
     """只读客户端：Cookie 由环境变量提供，不需要 Node / 登录链。"""
 
     def __init__(self, cookie=None, *, webid=None, ms_token=None, timeout=20):
-        self.cookie_str = (cookie or os.getenv("DOUYIN_COOKIE") or "").strip()
+        self.cookie_str = _resolve_cookie(cookie or os.getenv("DOUYIN_COOKIE"))
         if not self.cookie_str:
             raise RuntimeError(
                 "缺少 DOUYIN_COOKIE。请在浏览器打开 www.douyin.com，从任意 "
-                "/aweme/v1/web/ 请求复制完整 Cookie（必须含 UIFID），写入技能的 "
-                "config.json。"
+                "/aweme/v1/web/ 请求复制完整 Cookie（必须含 UIFID），存成技能目录下的 "
+                "cookie.txt，再把 config.json 的 DOUYIN_COOKIE 写成 \"cookie.txt\"。"
             )
         self.cookies = _trans_cookies(self.cookie_str)
         self.timeout = timeout

@@ -1,0 +1,15 @@
+{
+  "timeout": 8,
+  "default_speed": 0.6,
+  "default_duration": 2.0,
+  "default_camera": "camera1",
+  "cameras": {
+    "camera1": {
+      "name": "前院",
+      "ip": "192.168.1.10",
+      "port": 80,
+      "username": "admin",
+      "password": "your-camera-password"
+    }
+  }
+}

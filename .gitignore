@@ -3,6 +3,9 @@ config.json
 **/config.json
 tplink.conf
 **/tplink.conf
+# 敏感内容文件（config.json 里指向它的路径，如 DOUYIN_COOKIE=cookie.txt）
+cookie.txt
+**/cookie.txt
 
 __pycache__/
 *.pyc
