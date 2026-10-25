@@ -176,7 +176,7 @@
     },
     {
       "name": "phone_thermal",
-      "description": "读取手机各部位温度（电池 / 屏幕 / 主板 / CPU / GPU / 摄像头等，℃），按温度降序（仅 Android）",
+      "description": "读取手机各部位温度（电池 / 屏幕 / 主板 / CPU / GPU / 摄像头等，℃），按温度降序",
       "platform": ["android"],
       "path": "phone_thermal",
       "entry": "skill.py",
