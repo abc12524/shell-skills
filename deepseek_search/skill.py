@@ -2,18 +2,12 @@
 # description: DeepSeek 网页搜索 / 抓取（官方自研搜索引擎），返回结构化网页结果
 # status: enable
 # usage:
-#   arguments.action = search（默认，POST /v1/tools/search）| fetch（POST /v1/tools/fetch）
-#   search 模式:
-#     arguments.query = 搜索词（必填，1~128 字符，支持搜索语法 site:/"..." /lang:/after:/before: 等）
-#     arguments.count = 返回条数，默认 5，范围 1~50
-#     arguments.need_content = true|false，是否返回网页正文 content，默认 false
-#     arguments.ori_question = 触发搜索的用户原始问题（可选，有助理解意图）
-#     arguments.localization = 优先返回本地化结果的 IP 地址（可选，默认空）
-#   fetch 模式:
-#     arguments.url = 要抓取的 HTTP/HTTPS 网页地址（必填）
-#   arguments.timeout = 请求超时秒数，默认 30
-#   示例: {"action": "search", "query": "DeepSeek V4 模型 发布", "count": 5}
-#         {"action": "fetch", "url": "https://example.com/article"}
+#   arguments.action = search（默认）| fetch
+#   search: query（必填，1~128 字，支持 site:/"..." / lang:/after:/before:）；
+#           count（默认 5，1~50）/ need_content（是否返回正文）/ ori_question / localization / timeout(30)
+#   fetch:  url（必填）
+#   示例: {"action":"search","query":"DeepSeek V4 发布","count":5}
+#         {"action":"fetch","url":"https://example.com/article"}
 import json
 import os
 

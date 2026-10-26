@@ -2,18 +2,13 @@
 # description: 多邮箱工具（163/126/yeah/qq/gmail/outlook）：列表 / 读信 / 发信 / 未读
 # status: enable
 # usage:
-#   arguments.action   = list | read | send | monitor | folders | providers | config（默认 list）
-#   arguments.provider = 163 | 126 | yeah | qq | gmail | outlook（默认 163）
-#   arguments.folder   = 操作文件夹（list/read/monitor 用，默认 INBOX；见 folders）
-#   arguments.args     = read 传 [邮件ID]（HTML 正文自动转纯文本）；send 传 [收件人, 主题, 正文]
-#   arguments.max_len  = read 正文截断长度（默认 8000）
-#   账号密码：arguments.user/password > config.json accounts.<provider> > 环境变量 MAIL_USER/MAIL_PASS
-#   示例: {"action":"list","provider":"qq"}
-#         {"action":"folders"}
-#         {"action":"read","args":["3"],"folder":"Sent"}
+#   arguments.action   = list（默认）| read | send | monitor | folders | providers | config
+#   arguments.provider = 163（默认）| 126 | yeah | qq | gmail | outlook
+#   arguments.folder   = 操作文件夹（默认 INBOX；见 folders）；max_len = read 正文截断（8000）
+#   arguments.args     = read 传 [邮件ID]（HTML 转纯文本）；send 传 [收件人, 主题, 正文]
+#   账号: user/password > config.json accounts.<provider> > MAIL_USER/MAIL_PASS；可选 MAIL_CA_BUNDLE
+#   示例: {"action":"list","provider":"qq"} / {"action":"read","args":["3"],"folder":"Sent"}
 #         {"action":"send","args":["a@b.com","标题","正文"]}
-# 配置：同目录 config.json（模板 config.example.json），accounts.<provider>={"user","pass"}；可选 MAIL_CA_BUNDLE
-# 依赖：仅标准库
 """多邮箱工具 skill（列表 / 读信 / 发信 / 未读）。"""
 import base64
 import email

@@ -3,22 +3,13 @@
 # status: enable
 # usage:
 #   arguments.action = read | remove_gps | remove_all | write | comment
-#   arguments.path / arguments.paths = 单文件 / 多文件路径
-#   read       : 读 EXIF（arguments.ifd 可选 0th/Exif/GPS/1st/Interop）；空标签省略，无 EXIF 返回 message
-#   remove_gps : 移除 GPS（多文件）
-#   remove_all : 移除全部 EXIF（多文件）
-#   write      : 写入 arguments.info = {标签名: 值}
-#   comment    : 写备注 arguments.comment = "文本"（Exif.UserComment）
-#   保存       : 默认原地写回；arguments.output（单文件=路径，多文件=目录）
-#                或 arguments.suffix（就近另存「原名<后缀>.jpg」）则另存新文件
-#   常用标签: Make/Model/Artist/Copyright/DateTime/ImageDescription/
-#   Orientation/DateTimeOriginal/UserComment/ExposureTime/FNumber/ISOSpeedRatings/
-#   FocalLength/LensModel/GPSLatitude/GPSLongitude/GPSAltitude 等
-#   示例: {"action":"read","path":"./a.jpg"}
-#         {"action":"remove_gps","paths":["a.jpg","b.jpg"]}
-#         {"action":"remove_all","path":"a.jpg","output":"./clean.jpg"}
+#   arguments.path / paths = 单文件 / 多文件；read 可选 ifd（0th/Exif/GPS/1st/Interop）
+#   write: info = {标签名: 值}；comment: comment = 文本（Exif.UserComment）
+#   保存: 默认原地写回；output（单文件=路径，多文件=目录）或 suffix（另存「原名<后缀>」）
+#   常用标签: Make/Model/Artist/Copyright/DateTime/ImageDescription/Orientation/
+#             DateTimeOriginal/UserComment/ExposureTime/FNumber/ISOSpeedRatings/FocalLength/LensModel/GPS*
+#   示例: {"action":"read","path":"./a.jpg"} / {"action":"remove_gps","paths":["a.jpg","b.jpg"]}
 #         {"action":"write","path":"a.jpg","info":{"Artist":"张三"},"suffix":"_tag"}
-#         {"action":"comment","paths":["a.jpg","b.jpg"],"comment":"翻拍于武汉"}
 """图片 EXIF 工具 skill（基于 piexif）。
 
 统一入口 run(arguments)，按 action 分发：

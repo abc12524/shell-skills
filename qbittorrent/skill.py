@@ -3,12 +3,11 @@
 # status: enable
 # usage:
 #   arguments.action = add | list | info | pause | resume | delete（默认 list）
-#   list: filter / category / keyword / limit / sort / order / show_completion
+#   list: filter/category/keyword/limit/sort/order/show_completion
 #   add: source 或 sources（数组 / 换行分隔）/ save_path / category / paused
-#   info / pause / resume: keyword（hash 或名称关键词）
-#   delete: keyword | hashes=a|b|c | before=YYYY-MM-DD | after=... | all=true[+filter]
-#           可加 delete_files=true、dry_run=true（只列出待删内容不执行）
-#   连接: config.json 的 QBIT_*，或 QBIT_API_KEY 走 Bearer 认证
+#   info/pause/resume: keyword（hash 或名称）；delete: keyword | hashes | before/after | all=true[+filter]
+#          可加 delete_files=true、dry_run=true（只列出待删）
+#   连接: config.json 的 QBIT_*，或 QBIT_API_KEY（Bearer）
 #   示例: {"action":"list","filter":"downloading"}
 import base64
 import json

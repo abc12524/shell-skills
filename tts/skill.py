@@ -3,13 +3,11 @@
 # status: enable
 # usage:
 #   arguments.text    = 要合成的文本（必填）
-#   arguments.voice   = 音色，默认 zh-CN-XiaoxiaoNeural
-#   arguments.rate    = 语速，如 +10%，默认 +0%
-#   arguments.volume  = 音量，如 -20%，默认 +0%
-#   arguments.pitch   = 音调，如 +5Hz，默认 +0Hz
-#   arguments.output  = 输出 MP3 路径，默认 tts/audio/tts_<hash>.mp3
-#   正文显示音频：回答里用英文方括号包住「audio:路径」；marker=true 时结果直接附带
-#   示例: {"text": "你好，这是一次测试语音。"}
+#   arguments.voice   = 音色（默认 zh-CN-XiaoxiaoNeural）
+#   arguments.rate / volume / pitch = 语速 / 音量 / 音调（如 +10%、-20%、+5Hz）
+#   arguments.output  = 输出 MP3（默认 tts/audio/tts_<hash>.mp3）
+#   正文显示音频用 [audio:路径]（marker=true 自动附带）
+#   示例: {"text":"你好，这是一次测试语音。"}
 import asyncio
 import hashlib
 import re

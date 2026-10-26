@@ -3,14 +3,13 @@
 # status: enable
 # usage:
 #   arguments.action = upload | download | delete | list（默认 list）
-#     upload / download  文件或文件夹（文件夹递归）；delete 非空目录需 recursive=true
-#   arguments.host / port(21) / username / password
-#   arguments.secure(true=FTPS 显式 TLS) / passive(默认 true) / timeout(30) / encoding(默认 utf-8，可 gbk)
-#   arguments.remote_path 用 / 分隔；arguments.local_path 本机路径
-#   说明: 纯标准库 ftplib，兼容 vsftpd；配置见同目录 config.json（FTP_* / FTP_ENCODING）
-#   示例: {"action": "list", "host": "192.168.1.10", "username": "u", "password": "p"}
-#         {"action": "upload", "local_path": "./a.txt", "remote_path": "docs/a.txt", ...}
-#         {"action": "delete", "remote_path": "docs", "recursive": true, ...}
+#     upload / download 支持文件夹递归；delete 非空目录需 recursive=true
+#   arguments.host / port(21) / username / password / secure(FTPS) / passive(true) / timeout(30)
+#   arguments.remote_path（/ 分隔）/ local_path；encoding 默认 utf-8（可 gbk）
+#   配置: config.json 的 FTP_* / FTP_ENCODING；依赖标准库
+#   示例: {"action":"list","host":"192.168.1.10","username":"u","password":"p"}
+#         {"action":"upload","local_path":"./a.txt","remote_path":"docs/a.txt", ...}
+#         {"action":"delete","remote_path":"docs","recursive":true, ...}
 import ftplib
 import json
 import os

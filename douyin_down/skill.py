@@ -2,13 +2,12 @@
 # description: 抖音分享链接解析与下载（视频 / 图集，可选画质）
 # status: enable
 # usage:
-#   arguments.action = download（默认）| parse（元数据）| qualities（列画质）| list（核对本地文件）
-#   arguments.share = 分享文案 / v.douyin.com 短链 / 作品 URL（必填）
-#   arguments.quality = best（默认，最高画质）| h264 | 2160 | 1440 | 1080 | 720 | 540
+#   arguments.action = download（默认）| parse（元数据）| qualities（列画质）| list（本地文件）
+#   arguments.share = 分享文案 / 短链 / 作品 URL（必填）
+#   arguments.quality = best（默认）| h264 | 2160 | 1440 | 1080 | 720 | 540
 #   arguments.media = auto（默认）| video | image | all；out_dir（默认技能目录）/ timeout
-#   配置: 同目录 config.json —— DOUYIN_COOKIE（必填：写 cookie 文件名如 "cookie.txt"，内容放该文件）
-#         / DOUYIN_WEBID / DOUYIN_MS_TOKEN
-#   示例: {"share": "https://v.douyin.com/xxxxx/"}
+#   配置: config.json 的 DOUYIN_COOKIE（cookie 文件名，必填）/ DOUYIN_WEBID / DOUYIN_MS_TOKEN
+#   示例: {"share":"https://v.douyin.com/xxxxx/"}
 import json
 import os
 

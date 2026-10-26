@@ -3,24 +3,15 @@
 # status: enable
 # usage:
 #   action = hosts | ping | conn | databases | tables | describe | status | processlist | query | exec
-#     查询：query（SELECT/SHOW/DESC/EXPLAIN/WITH；无 LIMIT 自动补，超出提示 truncated）
-#     元数据：databases / tables（pattern）/ describe（table 必填，支持 db.table）
-#     诊断：ping（逐台连通性/版本/只读）、conn（字符集/时区/最大连接）、status（scope=status|variables）、processlist
-#     写：exec（INSERT/UPDATE/DELETE/DDL，须 confirm=true；readonly 主机拒绝）
-#   通用参数：host = config 主机名，可数组或 "all"（默认 default_host）；database 覆盖默认库；
-#     limit 行数上限（默认 config.max_rows，0=不限）；format = text|json；timeout 秒
-#   query / exec 额外：sql（单条；占位符 %s 配 params 数组）
-#   readonly 主机：exec 拒绝；query 另拦 SELECT ... INTO OUTFILE/DUMPFILE、FOR UPDATE、
-#     LOCK IN SHARE MODE（读接口的写副作用）
-#   示例: {"action": "query", "host": "local", "sql": "SELECT * FROM t WHERE id = %s", "params": [7]}
-#         {"action": "exec", "host": "local", "sql": "UPDATE t SET a = 1 WHERE id = 7", "confirm": true}
-#
-# 配置：本目录 config.json（模板 config.example.json）：
-#   {"default_host": "local", "max_rows": 200, "timeout": 10,
-#    "hosts": {"local": {"host": "127.0.0.1", "port": 3306, "user": "root", "password": "***",
-#                        "database": "", "charset": "utf8mb4", "readonly": false}}}
-#   无 config.json 时回退环境变量 MYSQL_HOST / MYSQL_PORT / MYSQL_USER / MYSQL_PASSWORD / MYSQL_DB（主机名 env）。
-# 依赖：pymysql（纯 Python，不调系统 mysql 命令）；MySQL 8 的 caching_sha2_password 另需 cryptography。
+#     query（SELECT/SHOW/DESC/EXPLAIN/WITH，无 LIMIT 自动补）；exec 写入/DDL 须 confirm=true
+#     databases / tables(pattern) / describe(table，支持 db.table) / status(scope=status|variables)
+#   通用: host(config 主机名，数组或 "all") / database / limit(默认 max_rows，0=不限) / format=text|json
+#   query/exec: sql（单条，%s 配 params 数组）
+#   readonly 主机拒绝 exec，并拦截 SELECT ... INTO OUTFILE、FOR UPDATE、LOCK IN SHARE MODE
+#   配置: config.json（default_host/max_rows/timeout/hosts）；无则用 MYSQL_HOST/PORT/USER/PASSWORD/DB
+#   依赖: pymysql（MySQL 8 caching_sha2_password 另需 cryptography）
+#   示例: {"action":"query","host":"local","sql":"SELECT * FROM t WHERE id=%s","params":[7]}
+#         {"action":"exec","host":"local","sql":"UPDATE t SET a=1 WHERE id=7","confirm":true}
 """多主机 MySQL 客户端 skill：查询 / 写入 / 元数据 / 诊断，四端通用。"""
 import json
 import os

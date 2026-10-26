@@ -2,27 +2,15 @@
 # description: PNG 工具：draw 画图（零依赖或 Pillow 抗锯齿/文字）/ encode 原始像素 / decode 读回
 # status: enable
 # usage:
-#   arguments.action = draw | encode | decode | selftest
-#     draw      用形状直接出图（推荐）
-#     encode    编码原始像素（pixels base64 或 input 文件）
-#     decode    解析 PNG（校验 CRC，可 output_raw 导出像素）
-#     selftest  内置样图回环自检
-#   draw: width/height 必填；background 默认白色；colortype 可选 0/2/6（默认自动）
-#     shapes 按序覆盖：rect / circle / line / polygon / gradient / checker / fill
-#     装了 Pillow 时另支持 text（x/y/size/color/font/anchor），并默认超采样抗锯齿
-#     engine = auto（默认，有 Pillow 就用）| plain（零依赖）| pillow（强制）
-#     注意：移动端（android / kelivo）没有 Pillow，auto 会回落 plain，text 不可用
-#     supersample = 1-4，默认 3（仅 pillow）；例 {"type":"circle","cx":60,"cy":40,"r":20,"color":"#ff8800"}
-#     颜色：[r,g,b] / [r,g,b,a] / 灰度 0-255 / #rgb / #rrggbb / #rrggbbaa
-#   encode: width/height + pixels|input；colortype 0/2/3/4/6（3 需 palette）
-#     可选 trns / phys / text / filter(0-4) / backend(zlib|fixed|storage) / output
-#   decode: path；可选 output_raw
-#   selftest: size 默认 64（8-256）
-#   output 默认 <技能目录>/png/png_<hash>.png，相对路径以技能目录为基准
-#   正文显示图片：回答里用英文方括号包住「image:路径」；marker=true 时结果直接附带
-#   示例: {"action":"draw","width":200,"height":120,"shapes":[
-#            {"type":"gradient","direction":"diagonal","from":"#1e90ff","to":"#ffcc00"},
-#            {"type":"circle","cx":100,"cy":60,"r":38,"color":[255,255,255]}]}
+#   arguments.action = draw（推荐，形状直接出图）| encode | decode（校验 CRC）| selftest（回环自检）
+#   draw: width/height 必填；background(白)；colortype(0/2/6，自动)；shapes 按序覆盖
+#     shapes: rect/circle/line/polygon/gradient/checker/fill；有 Pillow 时支持 text 且默认抗锯齿
+#     engine = auto(默认)|plain(零依赖)|pillow；移动端无 Pillow，text 不可用；supersample 1-4(默认 3)
+#     颜色: [r,g,b]/[r,g,b,a]/灰度 0-255/#rgb/#rrggbb/#rrggbbaa
+#   encode: width/height + pixels|input；colortype 0/2/3/4/6（3 需 palette）；可选 trns/phys/text/filter/backend/output
+#   decode: path；可选 output_raw；selftest: size 默认 64（8-256）
+#   output 默认 <技能目录>/png/png_<hash>.png；正文显示图片用 [image:路径]（marker=true 自动附带）
+#   示例: {"action":"draw","width":200,"height":120,"shapes":[{"type":"circle","cx":100,"cy":60,"r":38}]}
 import base64
 import binascii
 import hashlib

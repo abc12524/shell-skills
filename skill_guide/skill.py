@@ -2,13 +2,9 @@
 # description: 如何编写 skill：规范、要求、头部格式与调用约定（文档见同目录 skill_README.md）
 # status: enable
 # usage:
-#   arguments.action = read | path（默认 read）
-#     read  返回说明书 Markdown 全文
-#     path  只返回说明书的绝对路径
-#   说明: 文档来源为同目录 skill_README.md，内容与 android-agent 内置的 skill 说明保持一致。
-#         修改规范时请同时更新文档与本技能。
-#   示例: {"action": "read"}
-#   示例: {"action": "path"}
+#   arguments.action = read（默认，返回说明书全文）| path（只返回绝对路径）
+#   文档: 同目录 skill_README.md，与 android-agent 内置说明一致；改规范时同步更新
+#   示例: {"action":"read"} / {"action":"path"}
 import json
 import os
 import sys

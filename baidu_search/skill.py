@@ -2,15 +2,10 @@
 # description: 百度搜索 / 百科查询
 # status: enable
 # usage:
-#   arguments.action = raw | summary | search | baike | baikelist | quota
-#     raw        百度搜索原始结果（默认）
-#     summary    网页摘要（AI 总结 + 来源，最快推荐）
-#     search     智能搜索生成（LLM 总结）
-#     baike      百科词条详情（摘要 + 信息卡）
-#     baikelist  百科搜索列表
-#     quota      查看配额说明
-#   arguments.query = 搜索关键词或词条名（quota 模式可省略）
-#   示例: {"action": "summary", "query": "今天北京天气"}
+#   arguments.action = raw（默认，原始结果）| summary（推荐，摘要+来源）| search（LLM 总结）
+#                    | baike（百科详情）| baikelist（百科列表）| quota（配额说明）
+#   arguments.query = 关键词或词条名（quota 可省略）
+#   示例: {"action":"summary","query":"今天北京天气"}
 import json
 import os
 

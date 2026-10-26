@@ -2,14 +2,11 @@
 # description: 手机存储审计：容量 / 最大文件 / 目录与类型排行 / 回收站清理（仅 Android）
 # status: enable
 # usage:
-#   arguments.action = overview(默认) | top_files | dirs | types | trash
-#   arguments.path   = 扫描根目录，默认 /storage/emulated/0
-#   arguments.limit  = 条数，默认 20
-#   arguments.depth  = dirs 层级，默认 1
-#   arguments.min_mb / ext / older_days = 文件过滤条件
-#   arguments.refresh = true 忽略缓存（默认 10 分钟）
-#   arguments.delete  = true 仅 trash：删除回收站残留，不可恢复
-#   示例: {}   {"action":"top_files","limit":5,"min_mb":50}   {"action":"trash","delete":true}
+#   arguments.action = overview（默认）| top_files | dirs | types | trash
+#   arguments.path = 扫描根（默认 /storage/emulated/0）；limit 默认 20；depth（dirs）默认 1
+#   arguments.min_mb / ext / older_days = 文件过滤；refresh=true 忽略缓存（10 分钟）
+#   arguments.delete = true 仅 trash，删除回收站残留且不可恢复
+#   示例: {} / {"action":"top_files","limit":5,"min_mb":50} / {"action":"trash","delete":true}
 """storage_audit —— 手机存储审计（仅 Android）。
 
 扫描 root 建立文件索引并缓存 10 分钟，输出 Markdown：分区容量、目录/类型排行、

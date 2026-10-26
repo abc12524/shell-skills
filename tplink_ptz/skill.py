@@ -4,31 +4,17 @@
 # usage:
 #   arguments.action = list | info | status | left | right | up | down | stop |
 #                      center | relative | absolute | presets | goto | save | delete
-#     list                    列出已配置摄像头（无需 camera）
-#     info                    读取 PTZ 能力（pan/tilt 范围、速度上限、预置点上限）
-#     status                  读取当前 pan/tilt 位置与运动状态
-#     left|right|up|down      方向连续转动 arguments.seconds 秒后自动停止
-#     stop                    立即停止（pan/tilt/zoom 全停）
-#     center                  归中到 (0,0)
-#     relative                相对位移，读 arguments.pan / tilt / zoom
-#     absolute                绝对定位，读 arguments.pan / tilt / zoom（默认 0）
-#     presets                 列出已保存预置点
-#     goto                    转到预置点，需 arguments.id
-#     save                    保存当前位姿为预置点，需 arguments.name
-#     delete                  删除预置点，需 arguments.id
-#   arguments.camera = 摄像头标识：键名(camera1) / 别名(前院) / IP（list 可省略；默认取配置 default_camera）
-#   arguments.speed  = 速度 0~1（默认读配置 default_speed=0.6）
-#   arguments.seconds= 方向转动时长秒（默认读配置 default_duration=2.0）
-#   arguments.pan / tilt / zoom = 位置或位移 -1~1（relative / absolute）
-#   arguments.id     = 预置点编号（goto / delete）
-#   arguments.name   = 预置点名称（save）
-#   arguments.config = 可选，配置文件路径（默认同目录 config.json，模板 config.example.json）
-#   配置结构: {"timeout": 8, "default_speed": 0.6, "default_duration": 2.0, "default_camera": "camera1",
-#              "cameras": {"camera1": {"name": "前院", "ip": "192.168.1.10", "port": 80,
-#                                      "username": "admin", "password": "***"}}}
-#   示例: {"action": "list"}
-#   示例: {"action": "right", "camera": "前院", "speed": 0.6, "seconds": 2}
-#   示例: {"action": "goto", "camera": "camera1", "id": 3}
+#     list/info/status 列摄像头 / 读能力 / 读当前位姿；stop 全停；center 归中 (0,0)
+#     left|right|up|down 转 arguments.seconds 秒后自动停
+#     relative / absolute 位移或定位，读 pan/tilt/zoom（-1~1，默认 0）
+#     presets 列预置点；goto/delete 需 id；save 需 name
+#   arguments.camera = 键名(camera1) / 别名(前院) / IP（list 可省；默认 default_camera）
+#   arguments.speed(0~1，默认 0.6) / seconds(默认 2.0)
+#   arguments.config = 配置路径（默认同目录 config.json，模板 config.example.json）
+#   配置: {"timeout":8,"default_speed":0.6,"default_duration":2.0,"default_camera":"camera1",
+#          "cameras":{"camera1":{"name":"前院","ip":"192.168.1.10","port":80,"username":"admin","password":"***"}}}
+#   示例: {"action":"list"} / {"action":"right","camera":"前院","speed":0.6,"seconds":2}
+#         {"action":"goto","camera":"camera1","id":3}
 import json
 import os
 import time

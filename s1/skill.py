@@ -2,16 +2,11 @@
 # description: Stage1st（S1）论坛浏览：版块 / 帖子列表 / 帖子内容 / 登录 / 回复
 # status: enable
 # usage:
-#   action = forums（默认）| threads | posts | login | reply
-#   forums  无参数
-#   threads fid 必填；可选 page / type
-#   posts   tid 必填；可选 page / last（读最后 N 页）
-#   login   username / password（缺省用 S1_USERNAME / S1_PASSWORD）
-#   reply   tid / message（需登录）
-#   输出为 Markdown 文本（result.text）
-#   示例: {"action": "posts", "tid": "1234567", "last": 3}
-#   常用 fid: 归墟/外野=157  动漫论坛=6  ＰＣ数码=51
-#   配置: S1_USERNAME / S1_PASSWORD / S1_HOST / S1_COOKIE_FILE；依赖 requests
+#   action = forums（默认）| threads（fid 必填，可选 page/type）| posts（tid 必填，可选 page/last）
+#          | login（username/password，缺省用 S1_USERNAME/S1_PASSWORD）| reply（tid/message，需登录）
+#   输出 Markdown 文本（result.text）
+#   配置: S1_USERNAME/S1_PASSWORD/S1_HOST/S1_COOKIE_FILE；常用 fid: 外野=157 动漫=6 数码=51
+#   示例: {"action":"posts","tid":"1234567","last":3}
 """Stage1st（S1）论坛浏览 skill。"""
 import json
 import os

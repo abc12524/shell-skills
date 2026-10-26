@@ -3,21 +3,11 @@
 # status: enable
 # usage:
 #   arguments.action = schedule | list | remove | show
-#     schedule  创建一个定时任务（需 time + command）
-#     list      列出待执行的定时任务
-#     remove    按编号删除任务（需 id）
-#     show      查看任务详情（需 id）
-#   schedule 参数：
-#     time     时间表达式，如 "now + 2 minutes" / "15:30" / "2026-10-12 15:30" / "midnight"
-#     command  到点执行的命令（字符串，可含换行）
-#     name     可选，任务名（默认自动生成）
-#     queue    可选，队列字母（默认 a）
-#     mail     可选，是否允许发邮件
-#   remove/show 参数：
-#     id       任务标识（list / schedule 返回值）
-#   示例: {"action": "schedule", "time": "now + 2 minutes", "command": "touch /tmp/at_demo"}
-#         {"action": "list"}
-#         {"action": "remove", "id": "3"}
+#   schedule: time（"now + 2 minutes"/"15:30"/"2026-10-12 15:30"/"midnight"）+ command（可含换行）
+#             可选 name / queue(默认 a) / mail
+#   list: 无参数；remove / show: id（list 或 schedule 返回值）
+#   示例: {"action":"schedule","time":"now + 2 minutes","command":"touch /tmp/at_demo"}
+#         {"action":"list"} / {"action":"remove","id":"3"}
 import json
 import os
 import re

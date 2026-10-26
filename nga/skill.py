@@ -2,15 +2,11 @@
 # description: NGA 论坛（bbs.nga.cn）浏览：版块分类 / 版块帖子列表 / 帖子回复 / 版块搜索 / 登录
 # status: enable
 # usage:
-#   action = forums（默认）| threads | posts | search | login
-#   forums  keyword 可选；按板块名查询，缺省显示分类概览
-#   threads fid 必填；可选 page / stid
-#   posts   tid 必填；可选 page
-#   search  keyword 必填
-#   login   cookie（缺省读 NGA_COOKIE）
-#   输出为 Markdown 文本（result.text）
-#   示例: {"action": "posts", "tid": 46826141}
+#   action = forums（默认，keyword 可选）| threads（fid 必填，可选 page/stid）| posts（tid 必填，可选 page）
+#          | search（keyword 必填）| login（cookie，缺省读 NGA_COOKIE）
+#   输出 Markdown 文本（result.text）
 #   配置: NGA_DOMAIN / NGA_COOKIE / NGA_INSECURE / NGA_COOKIE_FILE；依赖 requests
+#   示例: {"action":"posts","tid":46826141}
 """NGA 论坛浏览 skill。"""
 import json
 import os

@@ -2,26 +2,17 @@
 # description: 华为 VRP 设备（路由器 / 交换机，旧版 SSH）常驻会话客户端：跟踪/切换视图、查 port 状态；Y/N 须显式应答；仅 Linux
 # status: enable
 # usage:
-#   arguments.action  = run（默认）| send | start | stop | status | state | up | top | answer | next
-#   arguments.command = 命令文本（run / send / answer 必填）
-#   arguments.prefix  = 仅 next，原样拼 "?"："display " 查子命令、"disp" 查补全
-#   arguments.page    = 仅 next：页码（默认 1），每页 10 条
-#   arguments.limit   = 仅 next：每页条数（默认 10，最大 50）
-#   arguments.timeout = 单条命令超时秒数（默认 25）
-#   arguments.keep    = true（默认，保持会话）| false（执行完结束会话）
-#   run/send 执行命令（run 自动建会话、断线自动重连一次）；start/stop/status 管理会话
-#   state 查当前视图 / 是否未保存 / 是否挂着 Y/N；up 上一层；top 回用户视图
-#   answer 显式应答 Y/N（command="y"|"n"）；挂着 Y/N 时 run/send/up/top 会被拒绝
-#   next 向设备要当前视图的 ? 帮助，分页返回 next_steps（每页 10 条，page 翻页）
-#   返回: text、view/view_target/prompt/unsaved_changes、needs_confirm/confirm_text；
-#         next 额外返回 total/page/total_pages/next_steps（来自设备帮助，非本地写死）
+#   arguments.action  = run（默认，自动建会话/断线重连）| send | start | stop | status | state
+#                     | up | top | answer | next
+#   arguments.command = 命令（run/send/answer 必填；answer 用 "y"/"n"）
+#   arguments.prefix / page(1) / limit(10, ≤50) = 仅 next：拼 "?" 查帮助，分页返回 next_steps
+#   arguments.timeout = 单条命令超时（25）；keep=true(默认) | false(执行完结束会话)
+#   state 查视图/未保存/Y/N；up 上一层；top 回用户视图；挂 Y/N 时 run/send/up/top 被拒绝
+#   返回: text、view/view_target/prompt/unsaved_changes、needs_confirm/confirm_text
 #   示例: {"action":"run","command":"display interface brief"}
-#         {"action":"run","command":"system-view"} → {"action":"run","command":"interface GigabitEthernet0/0/1"} → {"action":"up"} → {"action":"top"}
 #         {"action":"run","command":"save"} → needs_confirm=true → {"action":"answer","command":"n"}
-#   配置: HUAWEI_SWITCH_HOST / HUAWEI_SWITCH_USER / HUAWEI_SWITCH_PASS /
-#         HUAWEI_SWITCH_NAME（设备提示符中的主机名）/ HUAWEI_SWITCH_HOME /
-#         HUAWEI_SWITCH_KEEPALIVE（空闲保活秒数，默认 120，0=关闭）
-#   依赖: 无（标准库 + 系统 ssh）；仅 Linux（Windows 调用会明确报错）
+#   配置: HUAWEI_SWITCH_HOST/USER/PASS/NAME/HOME/KEEPALIVE（空闲保活秒数，120，0=关）
+#   依赖: 标准库 + 系统 ssh；仅 Linux（Windows 调用会报错）
 """华为 VRP 设备常驻会话客户端 skill（shell-tool 运行时；需要 Linux pty）。"""
 import json
 import os

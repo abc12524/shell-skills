@@ -1,17 +1,12 @@
 # skill: weather
 # description: wttr.in 天气查询（默认武汉）：Markdown 日报 / 一行摘要 / 结构化 JSON，可落盘
 # usage:
-#   arguments.location = 地点名，如 Wuhan（默认）/ Beijing / "New York"
-#   arguments.days     = 0 | 3 ，默认 0
-#                        0=当天；3=当天+未来两天（wttr.in 实际只提供 3 天）
-#   arguments.format   = markdown | text | json，默认 markdown
-#                        markdown=带表格的中文日报；text=一行摘要；json=结构化数据（不含渲染）
-#   arguments.output   = 可选，把 markdown / text 结果写入指定文件，如 /tmp/weather.md
-#   返回: result.text 为渲染文本（markdown/text），result.forecast 为逐日结构化数据（json）
-#   示例: {"location": "Wuhan"}
-#   示例: {"location": "Shanghai", "days": 3}
-#   示例: {"location": "Tokyo", "days": 3, "format": "json"}
-#   示例: {"location": "Wuhan", "output": "/tmp/weather.md"}
+#   arguments.location = 地点（默认 Wuhan）
+#   arguments.days   = 0（当天，默认）| 3（含未来两天；wttr.in 实际只提供 3 天）
+#   arguments.format = markdown（默认表格日报）| text（一行摘要）| json（结构化）
+#   arguments.output = 写入文件，如 /tmp/weather.md
+#   返回: result.text（渲染文本）、result.forecast（逐日数据）
+#   示例: {"location":"Wuhan"} / {"location":"Tokyo","days":3,"format":"json"}
 """wttr.in 天气查询 skill（由原 CLI 脚本 weather.py 按 skill 规范改造）。
 
 改造要点：

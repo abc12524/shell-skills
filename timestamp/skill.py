@@ -3,27 +3,13 @@
 # status: enable
 # usage:
 #   arguments.action = now | to_date | to_ts
-#     now      返回当前时间（时间戳 + 本地/UTC 日期）
-#     to_date  时间戳 -> 日期字符串（需 value，可选 unit / tz / format）
-#     to_ts    日期字符串 -> 时间戳（需 value，可选 tz / format）
-#   now 参数：
-#     tz       可选，时区偏移，如 "+08:00" / "-05:00" / "UTC"（默认本地时区）
-#     format   可选，strftime 输出格式（默认 "%Y-%m-%d %H:%M:%S"）
-#   to_date 参数：
-#     value    时间戳，可为秒/毫秒/微秒（自动按位数判断），或数字字符串
-#     unit     可选，强制单位：s | ms | us（不传则自动判断）
-#     tz       可选，时区偏移，如 "+08:00" / "UTC"（默认本地时区）
-#     format   可选，strftime 输出格式（默认 "%Y-%m-%d %H:%M:%S"）
-#   to_ts 参数：
-#     value    日期字符串，如 "2026-10-18 15:30:00"
-#     tz       可选，value 所处时区偏移，如 "+08:00" / "UTC"（默认本地时区）
-#     format   可选，输入格式（默认依次尝试常见格式）
-#     unit     可选，输出单位：s（默认）| ms | us
-#   示例: {"action": "now"}
-#         {"action": "now", "tz": "+08:00", "format": "%Y-%m-%d %H:%M:%S"}
-#         {"action": "to_date", "value": 1729234200}
-#         {"action": "to_date", "value": 1729234200000, "tz": "UTC"}
-#         {"action": "to_ts", "value": "2026-10-18 15:30:00", "tz": "+08:00"}
+#   now:     当前时间（时间戳 + 本地/UTC 日期）
+#   to_date: value 时间戳（秒/毫秒/微秒自动判断；unit=s|ms|us 可强制）
+#   to_ts:   value 日期字符串；unit 输出单位 s(默认)|ms|us
+#   通用: tz 时区偏移（"+08:00"/"-05:00"/"UTC"，默认本地）；format 输入/输出格式
+#         （输出默认 "%Y-%m-%d %H:%M:%S"；to_ts 默认依次尝试常见格式）
+#   示例: {"action":"now"} / {"action":"to_date","value":1729234200}
+#         {"action":"to_ts","value":"2026-10-18 15:30:00","tz":"+08:00"}
 from datetime import datetime, timezone, timedelta
 
 try:  # android-agent / kelivo-agent：技能目录部署了 _envelope.py

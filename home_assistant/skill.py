@@ -3,24 +3,14 @@
 # status: enable
 # usage:
 #   arguments.action = states | state | call | history | logbook | services | template | config | ping
-#     states    列实体，可用 domain / area / search / unavailable 筛选；state 读单个实体
-#     call      调服务，需 domain + service + data（如 {"entity_id": "light.x"}）
-#     history / logbook  历史与日志，可选 entity_id、hours 或 start/end
-#     services  可用服务（给 domain 只看该域，再给 service 看参数）
-#     template  渲染 Jinja2，复杂查询首选
-#   arguments.entity_id = 实体 ID，逗号分隔可多值（如 light.living_room）
-#   arguments.domain    = 域，如 sensor / switch / automation
-#   arguments.area      = 区域 ID 或名称；arguments.search = 匹配 entity_id 或友好名
-#   arguments.unavailable = true 只看离线/未知实体；detail = true 附带属性和时间戳
-#   arguments.limit     = 条数上限（states 100 / logbook 50 / history 0 不限）
-#   arguments.hours     = 回看小时数（history 1 / logbook 24），start / end 为 ISO 时间可替代
-#   arguments.url / token = 临时覆盖配置里的 HA_URL / HA_TOKEN
-#   HTTPS: verify = verify（默认严格）/ none（自签名）；或用 ca_bundle 指定证书文件，
-#          或用 fingerprint 固定证书 SHA-256 指纹
-#   配置: 同目录 config.json —— HA_URL、HA_TOKEN（可选 HA_VERIFY / HA_CA_BUNDLE / HA_CERT_FINGERPRINT）
-#   示例: {"action": "states", "domain": "light"}
-#   示例: {"action": "call", "domain": "light", "service": "toggle", "data": {"entity_id": "light.living_room"}}
-#   示例: {"action": "template", "template": "{{ states('sensor.temp') }}"}
+#     states/state 读实体（domain/area/search/unavailable 筛选）；call 需 domain+service+data
+#     history/logbook 支持 hours 或 start/end；template 渲染 Jinja2（复杂查询首选）
+#   arguments.entity_id（逗号分隔多值）/ domain / area / search / unavailable / detail
+#   arguments.limit（states 100 / logbook 50 / history 0）/ hours（1 / 24）
+#   arguments.url / token 临时覆盖 HA_URL / HA_TOKEN；verify=verify|none / ca_bundle / fingerprint
+#   配置: config.json 的 HA_URL / HA_TOKEN（可选 HA_VERIFY / HA_CA_BUNDLE / HA_CERT_FINGERPRINT）
+#   示例: {"action":"states","domain":"light"}
+#         {"action":"call","domain":"light","service":"toggle","data":{"entity_id":"light.x"}}
 """Home Assistant REST API skill（纯标准库，无第三方依赖）。
 
 设计要点：

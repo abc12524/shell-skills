@@ -2,20 +2,13 @@
 # description: 磁盘占用分析（dust 的纯数据输出：整数字节 + 全路径，LLM 友好）
 # status: enable
 # usage:
-#   arguments.path  = 目标路径（默认 "."）
-#   arguments.paths = 多路径数组（与 path 二选一，如 ["/var","/usr"]）
-#   arguments.depth = 目录深度（透传 dust -d）
-#   arguments.top   = 全局按体积取前 N 大（祖先自动保留）；0=不限。默认 flat/tree 40，json 不限
-#   arguments.all   = true 输出全部（等同 top=0）
-#   arguments.tree  = true 输出 {bytes,depth,path}（树形，每层按体积降序）
-#   arguments.json  = true 输出嵌套 JSON 树 {bytes,path,children:[...]}
-#   arguments.human = true 额外附人类可读体积字段（默认不给）
-#   arguments.extra = 透传给 dust 的额外参数数组（如 ["-X","/proc"]）
-#   体积一律为整数字节；未安装 dust 时返回 code=not_installed
-#   示例: {"path": "/var/log", "top": 20}
-#         {"path": "/root", "tree": true, "depth": 2}
-#         {"json": true, "path": "/usr"}
-#         Windows: {"path": "C:\\\\Users", "top": 20}
+#   arguments.path / paths = 目标路径（默认 "."）/ 多路径数组（二选一）
+#   arguments.depth = 目录深度；top = 取前 N 大（0=不限，默认 flat/tree 40、json 不限）
+#   arguments.all   = true 等同 top=0
+#   arguments.tree / json = 树形 {bytes,depth,path} / 嵌套 JSON {bytes,path,children}
+#   arguments.human = 附人类可读体积；extra = 透传 dust 参数数组（如 ["-X","/proc"]）
+#   体积一律整数字节；未装 dust 返回 code=not_installed
+#   示例: {"path":"/var/log","top":20} / {"path":"/root","tree":true,"depth":2} / {"json":true,"path":"/usr"}
 """dustls —— dust 的纯数据包装器（skill 实现，单文件）。
 
 去掉一切给人看的格式（进度条、百分比条、树形符号、列对齐填充、Mi/Gi 人类单位、

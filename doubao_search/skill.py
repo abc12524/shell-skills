@@ -2,24 +2,15 @@
 # description: Feedcoop 豆包搜索 API（web_search / global_search），返回结构化网页结果
 # status: enable
 # usage:
-#   arguments.query = 搜索关键词（必填，1~100 字符，不支持多词）
-#   arguments.count = 返回条数，默认 5；web 上限 50、image 上限 5，global 服务端恒返 10 条、由本地按 count 截断
-#   arguments.action = web（默认，web_search）| global（global_search）
-#   arguments.search_type = 搜索类型，默认 web（web | image）
-#   arguments.need_content = true|false，服务端过滤：只返回有正文的结果，默认 false
-#   arguments.include_content = true|false，结果里是否带正文字段 content，默认 false（正文可达上万字符，慎开）
-#   arguments.need_url = true|false，服务端过滤：只返回带 URL 的结果，默认 true
-#   arguments.content_format = 正文格式 text（默认）| markdown（include_content=true 时可见）
-#   arguments.site = 限定站点（如 example.com），多个用 | 分隔、最多 20 个，默认不限
-#   arguments.block = 屏蔽站点，多个用 | 分隔、最多 5 个，默认空
-#   arguments.auth_info = 1 只返回非常权威的结果，0 不限（默认 0）
-#   arguments.time_range = OneDay|OneWeek|OneMonth|OneYear 或 YYYY-MM-DD..YYYY-MM-DD，默认空
-#   arguments.industry = 行业限定 finance|game|gov，默认空
-#   arguments.q_rewrite = true|false，是否改写 query（更慢），默认 false
-#   arguments.timeout = 请求超时秒数，默认 20
-#   示例: {"query": "武汉今天天气", "count": 3}
-#   注意: 该 API 静默忽略未知字段——参数名写错不报错、只是不生效。过滤器必须用 Filter.Sites /
-#         Filter.BlockHosts / Filter.AuthInfoLevel，正文格式用 ContentFormats，改写用 QueryControl.QueryRewrite
+#   arguments.query = 关键词（必填，1~100 字，不支持多词）；timeout 默认 20
+#   arguments.action = web（默认）| global；count 默认 5（web≤50、image≤5，global 恒 10 条后截断）
+#   arguments.search_type = web（默认）| image
+#   arguments.need_content / include_content / need_url（默认 true）= 正文过滤 / 返回正文 / URL 过滤
+#   arguments.content_format = text（默认）| markdown；q_rewrite = 改写 query
+#   arguments.site / block = 限定 / 屏蔽站点（| 分隔）；auth_info=1 仅权威；industry=finance|game|gov
+#   arguments.time_range = OneDay|OneWeek|OneMonth|OneYear 或 YYYY-MM-DD..YYYY-MM-DD
+#   注意: API 静默忽略未知字段，参数名写错不报错、只是不生效
+#   示例: {"query":"武汉今天天气","count":3}
 import json
 import os
 

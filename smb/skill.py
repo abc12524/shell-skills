@@ -3,14 +3,12 @@
 # status: enable
 # usage:
 #   arguments.action = upload | download | delete | list（默认 list）
-#     upload / download  文件或文件夹（文件夹递归）；delete 非空目录需 recursive=true
-#   arguments.host / share / username(可写 domain\\user) / password / domain / port(445) / timeout(60)
-#   arguments.remote_path 共享内路径；arguments.local_path 本机路径
-#   说明: 依赖 smbprotocol（pip install smbprotocol），无需系统 smbclient，支持 SMB 2.x / 3.x；
-#         配置见同目录 config.json（SMB_*）
-#   示例: {"action": "list", "host": "192.168.1.10", "share": "data", "username": "u", "password": "p"}
-#         {"action": "upload", "local_path": "./a.txt", "remote_path": "docs/a.txt", ...}
-#         {"action": "delete", "remote_path": "docs", "recursive": true, ...}
+#     upload / download 支持文件夹递归；delete 非空目录需 recursive=true
+#   arguments.host / share / username(可 domain\\user) / password / domain / port(445) / timeout(60)
+#   arguments.remote_path（共享内）/ local_path
+#   配置: config.json 的 SMB_*；依赖 smbprotocol，无需系统 smbclient，支持 SMB 2.x/3.x
+#   示例: {"action":"list","host":"192.168.1.10","share":"data","username":"u","password":"p"}
+#         {"action":"upload","local_path":"./a.txt","remote_path":"docs/a.txt", ...}
 import json
 import os
 import shutil
