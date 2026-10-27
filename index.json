@@ -225,6 +225,16 @@
       "config": []
     },
     {
+      "name": "sensor",
+      "description": "原生读取 Android 传感器：默认列出传感器名，可按 key/type/wakeup 过滤或补字段，按名称读实时值（支持索引、类型号、中英文别名）",
+      "platform": ["android"],
+      "path": "sensor",
+      "entry": "skill.py",
+      "version": "1.2.2",
+      "requires": [],
+      "config": []
+    },
+    {
       "name": "skill_config",
       "description": "技能配置助手：只传技能名返回待配的键，用户给值后写回该技能 config.json 并返回文件全文（明文、不打码）",
       "platform": ["linux", "windows", "android", "ios"],

@@ -35,6 +35,7 @@ shell-skills/
 ├── qbittorrent/        qBittorrent 下载管理（新建 / 列表 / 详情 / 暂停 / 继续 / 删除）
 ├── s1/                 Stage1st 论坛浏览（版块 / 帖子 / 回复 / 登录）
 ├── script/             脚本/代码增删改查 + 结构骨架
+├── sensor/             Android 传感器读取（列出传感器名 / 按名称读实时值；仅 Android）
 ├── skill_config/       技能配置助手：传技能名返回待配键，用户给值后写回 config.json 并回显文件全文
 ├── skill_guide/        如何编写 skill：规范、要求与示例（内置 skill_README.md）
 ├── smb/                SMB/CIFS 文件传输（smbprotocol：上传 / 下载 / 删除 / 列表）
