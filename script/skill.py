@@ -9,8 +9,11 @@
 #     edit 仅 before|after，省略 = 整段替换；体内插入用 add
 #   read/pattern 取内容（缺省给骨架），outline 看结构（with_calls 附调用）；pattern 先符号名正则再按行检索
 #   写动作回 unified diff（默认 3 行上下文，过长折叠；diff_context=N 输出完整 diff），dry_run 只预览
+#   批量替换（edit）: replacements=[{"old_code":"A","new_code":"B"}, ...] 按序执行后一次落盘，
+#     一组失败整体不写；每组可选 replace_all，new_code 省略即删除
 #   缩进用 @n:（相对插入基准，可为负）；超 limit 给 next；old_code 未命中提示最近行号
 #   例: {"action":"edit","file_path":"a.py","symbol":"parse","new_code":"..."}
+#   例: {"action":"edit","file_path":"a.py","replacements":[{"old_code":"OLD1","new_code":"NEW1"}]}
 from ._script_impl import script_editor
 
 
@@ -33,4 +36,5 @@ def run(arguments):
         position=a.get("position"),
         with_calls=a.get("with_calls", False),
         diff_context=a.get("diff_context"),
+        replacements=a.get("replacements"),
     )

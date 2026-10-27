@@ -48,12 +48,69 @@ def _norm_text(value):
     return str(value).replace("\r\n", "\n").replace("\r", "\n")
 
 
+MAX_REPLACEMENTS = 200
+
+
+def _norm_replacements(raw, default_all=False):
+    """批量替换参数归一：[{old_code, new_code, replace_all?}] -> [(old, new, all)]
+
+    返回 (items, err)。old_code 必填；new_code 缺省为空串（即删除该片段）。
+    """
+    if not isinstance(raw, (list, tuple)):
+        return None, "replacements 需为数组 [{\"old_code\":..., \"new_code\":...}, ...]"
+    if not raw:
+        return None, "replacements 不能为空数组"
+    if len(raw) > MAX_REPLACEMENTS:
+        return None, f"replacements 最多 {MAX_REPLACEMENTS} 组，实际 {len(raw)} 组"
+    items = []
+    for i, item in enumerate(raw, 1):
+        if not isinstance(item, dict):
+            return None, f"第 {i} 组不是对象（应为 {{\"old_code\":..., \"new_code\":...}}）"
+        old = _norm_text(item.get("old_code"))
+        if not old or not old.strip():
+            return None, f"第 {i} 组缺少 old_code"
+        new = _norm_text(item.get("new_code")) or ""
+        all_ = item.get("replace_all")
+        items.append((old, new, default_all if all_ is None else bool(all_)))
+    return items, None
+
+
+def _snippet(text, width=60):
+    """单行摘要，用于回显每组定位片段"""
+    first = (text or "").strip().split("\n", 1)[0]
+    return first if len(first) <= width else first[:width] + "…"
+
+
+def _apply_replacements(code, items, unit):
+    """按顺序应用多组替换（后一组看到前一组的结果）。
+
+    返回 (new_src, rows, err, err_code)；任一组失败即整体放弃（new_src=None）。
+    """
+    cur = code
+    rows = []
+    for i, (old, new, all_) in enumerate(items, 1):
+        if old == new:
+            rows.append({"index": i, "old_code": _snippet(old), "count": 0,
+                         "skipped": "identical"})
+            continue
+        new_src, count, err, ecode, meta = _replace(cur, old, new, all_, unit)
+        if err:
+            hint = _hint_msg(cur, old) if ecode == "not_found" else ""
+            return None, rows, f"第 {i} 组（{_snippet(old)}）替换失败: {err}{hint}", ecode
+        row = {"index": i, "old_code": _snippet(old), "count": count}
+        if meta:
+            row.update(meta)
+        rows.append(row)
+        cur = new_src
+    return cur, rows, None, None
+
+
 def script_editor(action: str = None, file_path: str = None, url: str = None,
                   language: str = None, symbol=None, pattern: str = None,
                   start_line: int = None, end_line: int = None, limit: int = DEFAULT_LIMIT,
                   old_code: str = None, new_code: str = None, replace_all: bool = False,
                   dry_run: bool = False, position: str = None, with_calls: bool = False,
-                  diff_context: int = None) -> str:
+                  diff_context: int = None, replacements=None) -> str:
     """脚本编辑 + 结构化读取工具（对齐 OpenViking / DSH 规范信封）。
 
     数据来源（二选一）：file_path（本地文件，可写）或 url（http/https，只读）。
@@ -64,11 +121,15 @@ def script_editor(action: str = None, file_path: str = None, url: str = None,
     - outline : 结构骨架（含每个符号起止行号；with_calls=true 才附调用关系）
     - create  : 新建文件（file_path 必须不存在；父目录缺失时自动创建）
     - add     : 插入 new_code，定位优先级 symbol > start_line > old_code > 文件末尾
-    - edit    : 替换，定位优先级 symbol > start_line > old_code
+    - edit    : 替换，定位优先级 symbol > start_line > old_code；也可用 replacements 批量替换
     - delete  : 删除，定位优先级 symbol > start_line > old_code
     position（配合 symbol）：add 支持 start | end（符号体内首/末，默认 end）| before | after；
     edit 仅支持 before | after，省略 position 即整段替换符号（start/end 会报错，
     要往符号体内插内容请用 add）；delete 忽略 position。
+    replacements（仅 edit）：数组 [{"old_code":..,"new_code":..}, ..]，按顺序执行、后一组看到
+    前一组的结果，最后一并落盘（单个 diff）；任一组未命中/多处歧义则整体放弃、不改文件。
+    每组可选 replace_all 覆盖顶层开关；new_code 省略等于删除该片段；new_code 与 old_code
+    相同的组跳过（回显 skipped=identical）。
     `@n:` 缩进相对「插入基准缩进」（add 到符号体时为体缩进，@0 = 基准层，@1 = 深一层）：
     用了 @n: 的行不要再写字面缩进，层级统一由 @n 表达。
     写入动作默认回显 unified diff；dry_run=true 只预览不落盘。
@@ -91,6 +152,12 @@ def script_editor(action: str = None, file_path: str = None, url: str = None,
     if diff_context is not None and diff_context < 0:
         return error("diff_context 必须为非负整数", code="invalid_argument")
 
+    rpl = None
+    if replacements is not None:
+        rpl, rerr = _norm_replacements(replacements, replace_all)
+        if rerr:
+            return error(rerr, code="invalid_argument")
+
     src = {}
     if file_path:
         src["file"] = _short_path(file_path)
@@ -102,6 +169,16 @@ def script_editor(action: str = None, file_path: str = None, url: str = None,
     if act not in ("read", "outline", "add", "edit", "delete", "create"):
         return error(f"未知操作 '{action}'（应为 read/outline/add/edit/delete/create）",
                      code="unknown_action")
+
+    if rpl is not None:
+        if act != "edit":
+            return error("replacements 仅配合 action=edit 使用", code="invalid_argument")
+        if symbol or start_line is not None or old_code:
+            return error("replacements 与 symbol/start_line/old_code 互斥，请只给一种定位方式",
+                         code="conflicting_target")
+        if new_code:
+            return error("使用 replacements 时不要再给顶层 new_code（每组自带）",
+                         code="conflicting_target")
 
     # 写动作（含 create）一律拒绝软链接：os.replace 会用普通文件顶掉链接节点，
     # 把链接关系毁掉；只读动作不受影响
@@ -178,6 +255,20 @@ def script_editor(action: str = None, file_path: str = None, url: str = None,
     lines = code.splitlines()
     unit = _indent_unit(lines)
     top_gap = 2 if _normalize_language(language) == "python" else 1
+
+    if rpl is not None:
+        # 批量替换：顺序应用、一次落盘；任一组失败则整体放弃（文件保持原样）
+        new_src, rows, berr, becode = _apply_replacements(code, rpl, unit)
+        if berr:
+            return error(berr, code=becode or "replace_failed")
+        if new_src == code:
+            return error("replacements 未产生任何变化（各组 new_code 与 old_code 相同）",
+                         code="no_change")
+        total = sum(row["count"] for row in rows)
+        return _finish(file_path, encoding, newline, "edit", total, "replaced", new_src,
+                       before=code, dry_run=dry_run, diff_context=diff_context,
+                       extra={"replacements": rows})
+
     sym = None
     use_symbol = bool(symbol)
     line_mode = start_line is not None
