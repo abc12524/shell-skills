@@ -12,13 +12,36 @@
 #   批量替换（edit）: replacements=[{"old_code":"A","new_code":"B"}, ...] 按序执行后一次落盘，
 #     一组失败整体不写；每组可选 replace_all，new_code 省略即删除
 #   缩进用 @n:（相对插入基准，可为负）；超 limit 给 next；old_code 未命中提示最近行号
+#   new_code 也可写成 content（建文件时的常见叫法）；未知参数直接报错，避免写成空文件
 #   例: {"action":"edit","file_path":"a.py","symbol":"parse","new_code":"..."}
 #   例: {"action":"edit","file_path":"a.py","replacements":[{"old_code":"OLD1","new_code":"NEW1"}]}
+#   例: {"action":"create","file_path":"a.py","content":"print(1)"}
 from ._script_impl import script_editor
+
+try:  # android-agent / kelivo-agent：技能目录部署了 _envelope.py
+    from _envelope import error
+except ImportError:  # shell-tool：使用 core.tools.envelope
+    from core.tools.envelope import error
+
+# 入口接受的参数键；拼错/臆造的键直接报错（历史上 action=create 传 content 会静默写空文件）
+_ARGS = (
+    "action", "file_path", "url", "language", "symbol", "pattern",
+    "start_line", "end_line", "limit", "old_code", "new_code", "content",
+    "replace_all", "dry_run", "position", "with_calls", "diff_context",
+    "replacements",
+)
 
 
 def run(arguments):
     a = arguments or {}
+    unknown = [k for k in a if k not in _ARGS]
+    if unknown:
+        return error(
+            "未知参数 " + "、".join(unknown) + "；可用参数: " + "、".join(_ARGS),
+            code="unknown_argument")
+    new_code = a.get("new_code")
+    if new_code is None:
+        new_code = a.get("content")          # content 是 new_code 的别名
     return script_editor(
         action=a.get("action", ""),
         file_path=a.get("file_path"),
@@ -30,7 +53,7 @@ def run(arguments):
         end_line=a.get("end_line"),
         limit=a.get("limit", 400),
         old_code=a.get("old_code"),
-        new_code=a.get("new_code"),
+        new_code=new_code,
         replace_all=a.get("replace_all", False),
         dry_run=a.get("dry_run", False),
         position=a.get("position"),

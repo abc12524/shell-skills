@@ -220,7 +220,7 @@
       "platform": ["linux", "windows", "android", "ios"],
       "path": "script",
       "entry": "skill.py",
-      "version": "1.3.0",
+      "version": "1.4.0",
       "requires": [],
       "config": []
     },

@@ -119,7 +119,8 @@ def script_editor(action: str = None, file_path: str = None, url: str = None,
     - read    : symbol（单个/数组，支持裸方法名）/ pattern（正则，先符号名后按行）/
                 start_line~end_line 行范围；都不给则返回结构骨架
     - outline : 结构骨架（含每个符号起止行号；with_calls=true 才附调用关系）
-    - create  : 新建文件（file_path 必须不存在；父目录缺失时自动创建）
+    - create  : 新建文件（file_path 必须不存在；父目录缺失时自动创建；new_code 必填，
+                显式给空串才建空文件，完全省略则报 missing_argument）
     - add     : 插入 new_code，定位优先级 symbol > start_line > old_code > 文件末尾
     - edit    : 替换，定位优先级 symbol > start_line > old_code；也可用 replacements 批量替换
     - delete  : 删除，定位优先级 symbol > start_line > old_code
@@ -136,6 +137,7 @@ def script_editor(action: str = None, file_path: str = None, url: str = None,
     diff_context 指定 diff 上下文行数（默认 3）；显式给出时不做长 diff 折叠，完整回显。
     """
     act = (action or "").strip().lower()
+    content_given = new_code is not None       # 显式空串也算给了内容（建空文件）
     old_code = _norm_text(old_code)
     new_code = _norm_text(new_code) or ""
     pos = (position or "").strip().lower()
@@ -188,6 +190,9 @@ def script_editor(action: str = None, file_path: str = None, url: str = None,
             return error(link_err, code="is_symlink")
 
     if act == "create":
+        if not content_given:
+            return error("create 需要 new_code（文件内容；也可用 content 别名）",
+                         code="missing_argument")
         # 新建文件无上下文缩进，`@n:` 以行首为基准、按 4 空格换算
         return _create_file(file_path, _prepare(new_code, "", "    "), dry_run)
 
