@@ -1,25 +1,15 @@
 # skill: codegraph
-# description: 代码图谱检索（codegraph CLI）：符号搜索 / 调用方与被调方 / 影响面 / 任务上下文 / 文件结构 / 建索引
-# status: enable
+# description: 代码图谱检索：符号搜索 / 调用方与被调方 / 影响面 / 任务上下文 / 文件结构 / 建索引
 # usage:
-#   arguments.action = status | query | callers | callees | impact | context | files | index | sync | unlock
-#                      （默认 status）
-#   通用: path 项目根目录（默认 config 的 CODEGRAPH_PROJECT，缺省用当前工作目录）
-#         timeout 秒（查询默认 120，index/sync 默认 600）；refresh=true 先增量同步再查
-#   status: 索引概况（文件/节点/边/语言/待同步改动）
-#   query: term 关键词（必填；也可写 search/query）/ limit 默认 10 / kind 节点类型过滤
-#          （function/class/method/route/import/variable/file，逗号分隔取首个）/ code=true 附源码片段
-#   callers | callees: symbol 符号名（必填）/ limit 默认 20 / code=true 附源码
-#   impact: symbol 符号名（必填）/ depth 影响半径 默认 2
-#   context: task 任务描述（必填）/ max_nodes 默认 20 / max_code 默认 5 / code=false 只给结构
-#            / format=markdown（默认，直接可读）| json
-#   files: filter 目录前缀 / pattern glob / max_depth 树深度 / format tree|flat|grouped
-#   index: force=true 全量重建（默认增量）；sync: 增量同步；unlock: 清掉卡住的索引锁
-#   未建索引时返回 not_indexed，按提示先跑 action=index（或 codegraph init）
-#   示例: {"action":"query","term":"parse_config","path":"D:/work/proj","code":true}
-#   示例: {"action":"callers","symbol":"run","limit":50}
-#   示例: {"action":"impact","symbol":"Agent.prompt","depth":2}
-#   示例: {"action":"context","task":"给登录接口加限流"}
+#   arguments.action = status（默认）| query | callers | callees | impact | context | files | index | sync | unlock
+#   通用: path 项目根（默认 CODEGRAPH_PROJECT 或当前目录）; refresh=true 先增量同步再查
+#   query: term 关键词（必填）; limit=10; kind=function|class|method|route|import|variable|file; code=true 附源码
+#   callers/callees: symbol（必填）; limit=20; code=true
+#   impact: symbol（必填）; depth=2（影响半径）
+#   context: task（必填）; max_nodes=20; max_code=5; format=markdown|json
+#   files: filter 目录前缀; pattern glob; max_depth; format=tree|flat|grouped
+#   index: force=true 全量重建; sync 增量同步; unlock 清卡住的锁; 未建索引先 index
+#   示例: {"action":"query","term":"parse_config","code":true}
 import os
 import sys
 
