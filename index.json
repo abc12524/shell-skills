@@ -35,6 +35,16 @@
       "config": ["BAIDU_QIANFAN_KEY"]
     },
     {
+      "name": "codegraph",
+      "description": "代码图谱检索（codegraph CLI）：符号搜索 / 调用方与被调方 / 影响面 / 任务上下文 / 文件结构 / 建索引",
+      "platform": ["linux", "windows"],
+      "path": "codegraph",
+      "entry": "skill.py",
+      "version": "1.0.0",
+      "requires": [],
+      "config": ["CODEGRAPH_BIN"]
+    },
+    {
       "name": "deepseek_search",
       "description": "DeepSeek 网页搜索 / 抓取（官方自研搜索引擎），返回结构化网页结果",
       "platform": ["linux", "windows", "android", "ios"],

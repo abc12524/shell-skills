@@ -16,6 +16,7 @@ shell-skills/
 ├── aria2/              aria2 下载管理（新建 / 列表 / 详情 / 暂停 / 继续 / 删除）
 ├── at/                 定时任务管理（创建 / 查看 / 删除到点执行一次的命令）
 ├── baidu_search/       百度搜索 / 百科查询
+├── codegraph/          代码图谱检索（codegraph CLI：符号 / 调用关系 / 影响面 / 任务上下文 / 建索引）
 ├── deepseek_search/    DeepSeek 网页搜索 / 抓取（官方自研搜索引擎）
 ├── doubao_search/      Feedcoop 豆包搜索 API（web_search / global_search）
 ├── douyin_down/        抖音分享链接解析与下载（短链 / 作品信息 / 画质选择 / 视频·图集）
@@ -52,6 +53,10 @@ shell-skills/
 
 > 每个技能文件夹内含入口脚本 `skill.py`、可选的配置模板与 `_` 前缀助手模块；
 > 各技能参数与依赖以 `index.json` 为准。
+>
+> `codegraph` 依赖外部的 codegraph CLI（`npm i -g codegraph`）。CLI 不在 PATH 时，
+> 在技能目录 `config.json` 里把 `CODEGRAPH_BIN` 指向可执行文件；`CODEGRAPH_PROJECT`
+> 可设默认项目目录（不设则用当前工作目录）。
 
 ## 技能文件夹约定
 
