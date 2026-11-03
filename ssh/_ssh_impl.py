@@ -2,11 +2,18 @@
 
 - exec：远端执行命令，返回 exit_status / stdout / stderr
 - upload / download：SFTP 传输，支持文件与目录递归
+- host_key：查看 / 删除已保存的主机公钥（known_hosts）
 连接参数优先级：arguments > 环境变量 / 同目录 config.json。
+
+主机公钥：默认 accept_new —— 首次连接认证成功后把主机公钥追加到 known_hosts
+（默认 ~/.ssh/known_hosts，不可写时回退到技能目录 known_hosts），之后同主机再连即校验；
+已记录但公钥变化会直接报 host_key_mismatch，不会静默覆盖。
 
 内部统一使用 dict 信封：{"status":"ok","result":...} / {"status":"error","error":...,"code":...}；
 对外由入口 skill.py 调 _emit() 转成运行时原生信封（shell-tool=JSON 字符串 / 移动端=dict）。
 """
+import base64
+import hashlib
 import io
 import json
 import os
@@ -21,6 +28,11 @@ except ImportError:  # 延迟到调用时报错，便于返回友好提示
 
 DEFAULT_PORT = 22
 DEFAULT_TIMEOUT = 30
+DEFAULT_KNOWN_HOSTS = "~/.ssh/known_hosts"
+# 未显式指定私钥时，按此顺序在 ~/.ssh 下查找默认私钥（用于带 passphrase 的场景）
+DEFAULT_KEY_FILES = ("id_ed25519", "id_ecdsa", "id_rsa", "id_dsa")
+# 主机公钥策略：accept_new（首次记录，默认）/ strict（只信任已记录）/ off（不校验，旧行为）
+HOST_KEY_POLICIES = ("accept_new", "strict", "off")
 
 
 # ============================ 信封兼容 ============================
@@ -132,6 +144,26 @@ def _as_float(value, default):
         return float(default)
 
 
+def _known_hosts_file(args):
+    """known_hosts 路径：arguments > SSH_KNOWN_HOSTS > ~/.ssh/known_hosts。"""
+    path = args.get("known_hosts") or os.environ.get("SSH_KNOWN_HOSTS") or DEFAULT_KNOWN_HOSTS
+    return os.path.normpath(os.path.expanduser(str(path).strip()))
+
+
+def _resolve_host_key_policy(args):
+    """主机公钥策略；兼容旧的 strict_host_key 布尔参数。"""
+    raw = args.get("host_key_policy") or os.environ.get("SSH_HOST_KEY_POLICY")
+    if raw:
+        policy = str(raw).strip().lower()
+        if policy not in HOST_KEY_POLICIES:
+            raise SshError(
+                "host_key_policy 仅支持 %s" % " / ".join(HOST_KEY_POLICIES), code="bad_policy"
+            )
+        return policy
+    strict = _as_bool(args.get("strict_host_key", os.environ.get("SSH_STRICT_HOST_KEY")), False)
+    return "strict" if strict else "accept_new"
+
+
 def _resolve(args):
     """解析连接配置；arguments 覆盖环境变量 / config.json。"""
     host = str(args.get("host") or os.environ.get("SSH_HOST", "")).strip()
@@ -154,10 +186,36 @@ def _resolve(args):
         "strict_host_key": _as_bool(
             args.get("strict_host_key", os.environ.get("SSH_STRICT_HOST_KEY")), False
         ),
+        "host_key_policy": _resolve_host_key_policy(args),
+        "known_hosts": _known_hosts_file(args),
         "timeout": _as_float(
             args.get("timeout", os.environ.get("SSH_TIMEOUT")), DEFAULT_TIMEOUT
         ),
     }
+
+
+def _key_parse_error(last_error):
+    text = str(last_error).lower()
+    if "password" in text or "decrypt" in text:
+        return SshError("passphrase 不正确（或私钥已损坏）", code="passphrase_invalid")
+    return SshError("私钥解析失败: %s" % last_error, code="bad_key")
+
+
+def _load_key_file(path, passphrase=None):
+    """按密钥类型逐个尝试解析私钥文件（PEM / OpenSSH：Ed25519 / ECDSA / RSA）。"""
+    key_classes = [paramiko.Ed25519Key, paramiko.ECDSAKey, paramiko.RSAKey]
+    if hasattr(paramiko, "DSSKey"):
+        key_classes.append(paramiko.DSSKey)
+
+    last_error = None
+    for key_class in key_classes:
+        try:
+            return key_class.from_private_key_file(path, password=passphrase)
+        except paramiko.PasswordRequiredException:
+            raise SshError("私钥已加密，请提供 passphrase", code="passphrase_required")
+        except Exception as exc:  # 换下一种密钥类型
+            last_error = exc
+    raise _key_parse_error(last_error)
 
 
 def _load_pkey(cfg):
@@ -177,11 +235,13 @@ def _load_pkey(cfg):
     else:
         raise SshError("private_key 需为 PEM/OpenSSH 私钥文本", code="bad_key")
 
-    if is_path and hasattr(paramiko.PKey, "from_path"):
-        try:
-            return paramiko.PKey.from_path(path, passphrase=passphrase)
-        except Exception:
-            pass  # 回退到逐类解析（旧版 paramiko）
+    if is_path:
+        if hasattr(paramiko.PKey, "from_path"):
+            try:
+                return paramiko.PKey.from_path(path, passphrase=passphrase)
+            except Exception:
+                pass  # 回退到逐类解析（旧版 paramiko）
+        return _load_key_file(path, passphrase)
 
     key_classes = [paramiko.Ed25519Key, paramiko.ECDSAKey, paramiko.RSAKey]
     if hasattr(paramiko, "DSSKey"):
@@ -190,15 +250,134 @@ def _load_pkey(cfg):
     last_error = None
     for key_class in key_classes:
         try:
-            if is_path:
-                return key_class.from_private_key_file(path, password=passphrase)
             source.seek(0)
             return key_class.from_private_key(source, password=passphrase)
         except paramiko.PasswordRequiredException:
             raise SshError("私钥已加密，请提供 passphrase", code="passphrase_required")
         except Exception as exc:  # 换下一种密钥类型
             last_error = exc
-    raise SshError("私钥解析失败: %s" % last_error, code="bad_key")
+    raise _key_parse_error(last_error)
+
+
+def _load_default_key(cfg):
+    """未显式给私钥时，用 passphrase 尝试 ~/.ssh 下的默认私钥（带密码的 id_* 也能用）。"""
+    passphrase = cfg["passphrase"] or None
+    if not passphrase:
+        return None  # 未给 passphrase 时交给 paramiko 的 look_for_keys / agent
+    home = os.path.expanduser("~/.ssh")
+    for name in DEFAULT_KEY_FILES:
+        path = os.path.join(home, name)
+        if not os.path.isfile(path):
+            continue
+        try:
+            return _load_key_file(path, passphrase)
+        except SshError as exc:
+            if exc.code == "passphrase_invalid":
+                raise  # passphrase 明确给了但不对，不要再静默回退
+            continue
+    return None
+
+
+# ============================ 主机公钥 ============================
+def _fingerprint(key):
+    digest = hashlib.sha256(key.asbytes()).digest()
+    return "SHA256:" + base64.b64encode(digest).decode("ascii").rstrip("=")
+
+
+def _fingerprint_from_blob(blob):
+    try:
+        raw = base64.b64decode(blob)
+    except Exception:
+        return None
+    return "SHA256:" + base64.b64encode(hashlib.sha256(raw).digest()).decode("ascii").rstrip("=")
+
+
+def _known_host_name(host, port):
+    """known_hosts 里的主机名写法：非 22 端口用 [host]:port（与 OpenSSH / paramiko 一致）。"""
+    return str(host) if int(port) == DEFAULT_PORT else "[%s]:%s" % (host, port)
+
+
+def _known_hosts_candidates(path):
+    """写入候选：配置路径优先，不可写（如移动端无 ~/.ssh 权限）时回退到技能目录。"""
+    fallback = os.path.join(os.path.dirname(os.path.abspath(__file__)), "known_hosts")
+    candidates = [path]
+    if os.path.abspath(path) != os.path.abspath(fallback):
+        candidates.append(fallback)
+    return candidates
+
+
+def _write_lines(path, lines):
+    parent = os.path.dirname(os.path.abspath(path))
+    if parent:
+        os.makedirs(parent, exist_ok=True)
+    prefix = ""
+    if os.path.exists(path) and os.path.getsize(path) > 0:
+        with open(path, "rb") as handle:
+            handle.seek(-1, os.SEEK_END)
+            if handle.read(1) not in (b"\n", b"\r"):
+                prefix = "\n"
+    with open(path, "a", encoding="utf-8") as handle:
+        handle.write(prefix + "\n".join(lines) + "\n")
+
+
+def _append_host_keys(path, pending):
+    """把首次连接拿到的主机公钥追加进 known_hosts；返回 (实际写入路径, 错误信息)。"""
+    lines = ["%s %s %s" % (host, key.get_name(), key.get_base64()) for host, key in pending]
+    last_error = None
+    for target in _known_hosts_candidates(path):
+        try:
+            _write_lines(target, lines)
+            return target, None
+        except OSError as exc:
+            last_error = exc
+    return path, str(last_error)
+
+
+class _RememberHostKeyPolicy(object):
+    """首次连接先在内存记下主机公钥，认证成功后再落盘（避免把连不上的目标写进 known_hosts）。"""
+
+    def __init__(self):
+        self.pending = []
+
+    def missing_host_key(self, client, hostname, key):
+        self.pending.append((hostname, key))
+
+
+def _load_known_hosts(client, path):
+    try:
+        client.load_system_host_keys()  # ~/.ssh/known_hosts 等系统记录
+    except OSError:
+        pass
+    if os.path.isfile(path):
+        try:
+            client.load_host_keys(path)
+        except (OSError, paramiko.SSHException):
+            pass  # 文件损坏不阻断连接：本次按首次连接处理
+
+
+def _host_key_report(client, cfg, pending, policy_name):
+    """本次连接的主机公钥情况：saved（首次已保存）/ known / disabled / save_failed。"""
+    report = {"status": "known", "known_hosts": cfg["known_hosts"]}
+    transport = client.get_transport()
+    if transport is not None:
+        try:
+            key = transport.get_remote_server_key()
+            report["type"] = key.get_name()
+            report["fingerprint"] = _fingerprint(key)
+        except Exception:
+            pass
+    if policy_name == "off":
+        report["status"] = "disabled"
+        return report
+    if pending:
+        target, error = _append_host_keys(cfg["known_hosts"], pending)
+        if error:
+            report["status"] = "save_failed"
+            report["error"] = error
+        else:
+            report["status"] = "saved"
+            report["known_hosts"] = target
+    return report
 
 
 def _connect(cfg):
@@ -206,11 +385,18 @@ def _connect(cfg):
         raise SshError("缺少 paramiko，请先安装：pip install paramiko", code="missing_dependency")
 
     client = paramiko.SSHClient()
-    if cfg["strict_host_key"]:
-        client.load_system_host_keys()
-        client.set_missing_host_key_policy(paramiko.RejectPolicy())
-    else:
+    policy_name = cfg["host_key_policy"]
+    pending = []
+    if policy_name == "off":
         client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    else:
+        _load_known_hosts(client, cfg["known_hosts"])
+        if policy_name == "strict":
+            client.set_missing_host_key_policy(paramiko.RejectPolicy())
+        else:
+            remember = _RememberHostKeyPolicy()
+            pending = remember.pending
+            client.set_missing_host_key_policy(remember)
 
     kwargs = {
         "hostname": cfg["host"],
@@ -221,6 +407,8 @@ def _connect(cfg):
         "auth_timeout": cfg["timeout"],
     }
     pkey = _load_pkey(cfg)
+    if pkey is None and not cfg["password"]:
+        pkey = _load_default_key(cfg)
     if pkey is not None:
         kwargs["pkey"] = pkey
     if cfg["password"]:
@@ -231,6 +419,15 @@ def _connect(cfg):
 
     try:
         client.connect(**kwargs)
+    except paramiko.BadHostKeyException as exc:
+        client.close()
+        raise SshError(
+            "主机公钥与 known_hosts 记录不一致（可能存在中间人）：%s\n"
+            "已记录: %s\n本次提供: %s\n确认无误后先删除旧记录再重连："
+            '{"action": "host_key", "op": "remove", "host": "%s"}'
+            % (cfg["host"], _fingerprint(exc.expected_key), _fingerprint(exc.key), cfg["host"]),
+            code="host_key_mismatch",
+        )
     except paramiko.AuthenticationException as exc:
         client.close()
         raise SshError("认证失败: %s" % exc, code="auth_failed")
@@ -239,8 +436,14 @@ def _connect(cfg):
         raise SshError("连接 %s:%s 失败: %s" % (cfg["host"], cfg["port"], exc), code="connect_failed")
     except paramiko.SSHException as exc:
         client.close()
+        if "not found in known_hosts" in str(exc):
+            raise SshError(
+                "主机公钥未记录且策略为 strict：%s\n首次连接请用 host_key_policy=accept_new 保存公钥"
+                % cfg["host"],
+                code="host_key_unknown",
+            )
         raise SshError("SSH 握手失败: %s" % exc, code="ssh_failed")
-    return client
+    return client, _host_key_report(client, cfg, pending, policy_name)
 
 
 # ============================ exec ============================
@@ -251,7 +454,7 @@ def _act_exec(args):
         return _error("缺少 command 参数", code="missing_command")
 
     timeout = _as_float(args.get("timeout"), cfg["timeout"])
-    client = _connect(cfg)
+    client, host_key = _connect(cfg)
     try:
         stdin, stdout, stderr = client.exec_command(
             command, timeout=timeout, get_pty=_as_bool(args.get("pty"), False)
@@ -273,6 +476,7 @@ def _act_exec(args):
         "exit_status": exit_status,
         "stdout": out.decode("utf-8", errors="replace"),
         "stderr": err.decode("utf-8", errors="replace"),
+        "host_key": host_key,
     })
 
 
@@ -323,7 +527,7 @@ def _act_upload(args):
         return _error("本地路径不存在: %s" % local_path, code="local_not_found")
 
     cfg = _resolve(args)
-    client = _connect(cfg)
+    client, host_key = _connect(cfg)
     files = 0
     total_bytes = 0
     try:
@@ -365,6 +569,7 @@ def _act_upload(args):
         "remote_path": remote_path,
         "files": files,
         "bytes": total_bytes,
+        "host_key": host_key,
     })
 
 
@@ -377,7 +582,7 @@ def _act_download(args):
         return _error("缺少 local_path 参数", code="missing_local_path")
 
     cfg = _resolve(args)
-    client = _connect(cfg)
+    client, host_key = _connect(cfg)
     files = 0
     total_bytes = 0
     try:
@@ -428,7 +633,88 @@ def _act_download(args):
         "local_path": local_path,
         "files": files,
         "bytes": total_bytes,
+        "host_key": host_key,
     })
+
+
+# ============================ host_key ============================
+def _read_known_hosts_lines(path):
+    try:
+        with open(path, encoding="utf-8", errors="replace") as handle:
+            return handle.read().splitlines(), None
+    except OSError as exc:
+        return [], str(exc)
+
+
+def _write_all_lines(path, lines):
+    """整体重写 known_hosts（先写临时文件再替换，避免写坏）。"""
+    parent = os.path.dirname(os.path.abspath(path))
+    if parent:
+        os.makedirs(parent, exist_ok=True)
+    temp = path + ".tmp"
+    with open(temp, "w", encoding="utf-8", newline="\n") as handle:
+        if lines:
+            handle.write("\n".join(lines) + "\n")
+    os.replace(temp, path)
+
+
+def _act_host_key(args):
+    """已保存的主机公钥：op=list 列出 / op=remove 按主机删除。"""
+    op = str(args.get("op") or "list").strip().lower()
+    path = _known_hosts_file(args)
+
+    if op == "list":
+        lines, error = _read_known_hosts_lines(path)
+        entries = []
+        for line in lines:
+            parts = line.split()
+            if len(parts) < 3 or line.strip().startswith("#"):
+                continue
+            entries.append({
+                "host": parts[0],
+                "type": parts[1],
+                "fingerprint": _fingerprint_from_blob(parts[2]),
+            })
+        result = {"op": op, "known_hosts": path, "count": len(entries), "entries": entries}
+        if error:
+            result["note"] = "文件不可读: %s" % error
+        return _ok(result)
+
+    if op == "remove":
+        host = str(args.get("host") or "").strip()
+        if not host:
+            return _error("缺少 host 参数", code="missing_host")
+        port = _as_int(args.get("port") or os.environ.get("SSH_PORT"), DEFAULT_PORT)
+        target = _known_host_name(host, port)
+        # 允许直接传 known_hosts 里的完整写法（[host]:port / host:port）
+        names = {target}
+        if ":" in host or host.startswith("["):
+            names.add(host)
+        lines, error = _read_known_hosts_lines(path)
+        if error:
+            return _error("known_hosts 不可读: %s" % error, code="known_hosts_unreadable")
+
+        kept = []
+        removed = 0
+        hashed = False
+        for line in lines:
+            parts = line.split()
+            if parts and not line.strip().startswith("#"):
+                if parts[0].startswith("|"):
+                    hashed = True
+                elif names & set(parts[0].split(",")):
+                    removed += 1
+                    continue
+            kept.append(line)
+        if removed:
+            _write_all_lines(path, kept)
+
+        result = {"op": op, "known_hosts": path, "host": target, "removed": removed}
+        if hashed and not removed:
+            result["note"] = "文件中有哈希条目（|1|...），无法按主机名匹配，请用 ssh-keygen -R 删除"
+        return _ok(result)
+
+    return _error("未知 op '%s'，可用: list, remove" % op, code="unknown_op")
 
 
 # ============================ 分发 ============================
@@ -436,6 +722,7 @@ ACTIONS = {
     "exec": _act_exec,
     "upload": _act_upload,
     "download": _act_download,
+    "host_key": _act_host_key,
 }
 
 

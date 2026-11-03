@@ -6,6 +6,8 @@
   "SSH_PRIVATE_KEY_PATH": "",
   "SSH_PRIVATE_KEY": "",
   "SSH_PASSPHRASE": "",
+  "SSH_HOST_KEY_POLICY": "accept_new",
+  "SSH_KNOWN_HOSTS": "~/.ssh/known_hosts",
   "SSH_STRICT_HOST_KEY": "false",
   "SSH_TIMEOUT": "30"
 }

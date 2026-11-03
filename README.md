@@ -40,7 +40,7 @@ shell-skills/
 ├── skill_config/       技能配置助手：传技能名返回待配键，用户给值后写回 config.json 并回显文件全文
 ├── skill_guide/        如何编写 skill：规范、要求与示例（内置 skill_README.md）
 ├── smb/                SMB/CIFS 文件传输（smbprotocol：上传 / 下载 / 删除 / 列表）
-├── ssh/                SSH 远程执行与 SCP 文件传输（paramiko：exec / 上传 / 下载）
+├── ssh/                SSH 远程执行与 SCP 文件传输（paramiko：exec / 上传 / 下载 / 主机公钥管理）
 ├── storage_audit/      手机存储审计（分区容量 / 大文件 / 目录与类型排行 / 回收站清理）
 ├── timestamp/          时间戳转换（当前时间 / 时间戳↔日期，支持时区与格式）
 ├── token_count/        DeepSeek V4 token 计数（直接文本 / 文件路径，纯 Python 零依赖）
