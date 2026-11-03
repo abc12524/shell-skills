@@ -276,13 +276,13 @@
     },
     {
       "name": "ssh",
-      "description": "SSH 远程执行与 SCP 文件传输：执行命令、上传/下载文件与目录，首次连接保存主机公钥",
+      "description": "SSH 远程执行与 SCP 文件传输：设备别名多机管理、批量执行、上传/下载，首次连接保存主机公钥",
       "platform": ["linux", "windows"],
       "path": "ssh",
       "entry": "skill.py",
-      "version": "1.1.0",
+      "version": "1.2.0",
       "requires": ["paramiko"],
-      "config": ["SSH_HOST", "SSH_PORT", "SSH_USERNAME", "SSH_PASSWORD", "SSH_PRIVATE_KEY_PATH", "SSH_PRIVATE_KEY", "SSH_PASSPHRASE", "SSH_HOST_KEY_POLICY", "SSH_KNOWN_HOSTS", "SSH_STRICT_HOST_KEY", "SSH_TIMEOUT"]
+      "config": ["SSH_HOST", "SSH_PORT", "SSH_USERNAME", "SSH_PASSWORD", "SSH_PRIVATE_KEY_PATH", "SSH_PRIVATE_KEY", "SSH_PASSPHRASE", "SSH_DEVICE", "SSH_HOST_KEY_POLICY", "SSH_KNOWN_HOSTS", "SSH_STRICT_HOST_KEY", "SSH_TIMEOUT"]
     },
     {
       "name": "storage_audit",

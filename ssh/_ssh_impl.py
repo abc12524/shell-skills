@@ -20,6 +20,7 @@ import os
 import posixpath
 import socket
 import stat
+from concurrent.futures import ThreadPoolExecutor
 
 try:
     import paramiko
@@ -100,22 +101,77 @@ class SshError(Exception):
 
 
 # ============================ 配置 ============================
+_CONFIG = {}
+
+
+def _config_path():
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
+
+
 def _load_config():
-    """把同目录 config.json 注入环境变量（不覆盖已有 env），照常 os.environ 读取。"""
-    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
+    """读取同目录 config.json：标量键注入环境变量（不覆盖已有 env），HOSTS 设备表留在 _CONFIG。"""
+    global _CONFIG
     try:
-        with open(path, encoding="utf-8") as f:
+        with open(_config_path(), encoding="utf-8") as f:
             cfg = json.load(f)
     except (OSError, ValueError):
         return
-    if isinstance(cfg, dict):
-        for key, value in cfg.items():
-            if key.startswith("_") or not value or os.environ.get(key):
-                continue
-            os.environ[key] = str(value)
+    if not isinstance(cfg, dict):
+        return
+    _CONFIG = cfg
+    for key, value in cfg.items():
+        if key.startswith("_") or isinstance(value, (dict, list)) or not value or os.environ.get(key):
+            continue
+        os.environ[key] = str(value)
+
+
+def _save_config(cfg):
+    """整体写回 config.json（先写临时文件再替换），并刷新内存里的设备表。"""
+    global _CONFIG
+    path = _config_path()
+    temp = path + ".tmp"
+    with open(temp, "w", encoding="utf-8", newline="\n") as f:
+        json.dump(cfg, f, ensure_ascii=False, indent=2)
+        f.write("\n")
+    os.replace(temp, path)
+    _CONFIG = cfg
 
 
 _load_config()
+
+
+def _device_profiles():
+    """设备别名表：config.json 的 HOSTS（或 hosts），可用 SSH_HOSTS=<json> 追加/覆盖。"""
+    profiles = {}
+    raw = _CONFIG.get("HOSTS")
+    if not isinstance(raw, dict):
+        raw = _CONFIG.get("hosts")
+    if isinstance(raw, dict):
+        profiles.update({str(k): v for k, v in raw.items() if isinstance(v, dict)})
+    extra_raw = os.environ.get("SSH_HOSTS")
+    if extra_raw:
+        try:
+            extra = json.loads(extra_raw)
+        except ValueError:
+            extra = None
+        if isinstance(extra, dict):
+            profiles.update({str(k): v for k, v in extra.items() if isinstance(v, dict)})
+    return profiles
+
+
+def _device_profile(args):
+    """解析 device 别名；未指定返回 ("", {})，指定但不存在抛 unknown_device。"""
+    name = str(args.get("device") or os.environ.get("SSH_DEVICE") or "").strip()
+    if not name:
+        return "", {}
+    profiles = _device_profiles()
+    profile = profiles.get(name)
+    if profile is None:
+        raise SshError(
+            "未知设备 '%s'，已配置: %s" % (name, ", ".join(sorted(profiles)) or "（无，先用 action=devices op=add 添加）"),
+            code="unknown_device",
+        )
+    return name, profile
 
 
 def _as_bool(value, default=False):
@@ -144,15 +200,25 @@ def _as_float(value, default):
         return float(default)
 
 
-def _known_hosts_file(args):
-    """known_hosts 路径：arguments > SSH_KNOWN_HOSTS > ~/.ssh/known_hosts。"""
-    path = args.get("known_hosts") or os.environ.get("SSH_KNOWN_HOSTS") or DEFAULT_KNOWN_HOSTS
+def _pick(args, profile, key, env_key):
+    """连接参数优先级：arguments > 设备别名配置 > 环境变量 / config.json。"""
+    value = args.get(key)
+    if value is None or value == "":
+        value = (profile or {}).get(key)
+    if value is None or value == "":
+        value = os.environ.get(env_key)
+    return value
+
+
+def _known_hosts_file(args, profile=None):
+    """known_hosts 路径：arguments > 设备配置 > SSH_KNOWN_HOSTS > ~/.ssh/known_hosts。"""
+    path = _pick(args, profile, "known_hosts", "SSH_KNOWN_HOSTS") or DEFAULT_KNOWN_HOSTS
     return os.path.normpath(os.path.expanduser(str(path).strip()))
 
 
-def _resolve_host_key_policy(args):
+def _resolve_host_key_policy(args, profile=None):
     """主机公钥策略；兼容旧的 strict_host_key 布尔参数。"""
-    raw = args.get("host_key_policy") or os.environ.get("SSH_HOST_KEY_POLICY")
+    raw = _pick(args, profile, "host_key_policy", "SSH_HOST_KEY_POLICY")
     if raw:
         policy = str(raw).strip().lower()
         if policy not in HOST_KEY_POLICIES:
@@ -160,37 +226,37 @@ def _resolve_host_key_policy(args):
                 "host_key_policy 仅支持 %s" % " / ".join(HOST_KEY_POLICIES), code="bad_policy"
             )
         return policy
-    strict = _as_bool(args.get("strict_host_key", os.environ.get("SSH_STRICT_HOST_KEY")), False)
+    strict = _as_bool(_pick(args, profile, "strict_host_key", "SSH_STRICT_HOST_KEY"), False)
     return "strict" if strict else "accept_new"
 
 
 def _resolve(args):
-    """解析连接配置；arguments 覆盖环境变量 / config.json。"""
-    host = str(args.get("host") or os.environ.get("SSH_HOST", "")).strip()
-    username = str(args.get("username") or os.environ.get("SSH_USERNAME", "")).strip()
+    """解析连接配置；arguments 覆盖设备别名 / 环境变量 / config.json。"""
+    device, profile = _device_profile(args)
+    host = str(_pick(args, profile, "host", "SSH_HOST") or "").strip()
+    username = str(_pick(args, profile, "username", "SSH_USERNAME") or "").strip()
     if not host:
-        raise SshError("缺少 host（或配置 SSH_HOST）", code="missing_host")
+        raise SshError("缺少 host（或配置 SSH_HOST / 设备别名 device）", code="missing_host")
     if not username:
-        raise SshError("缺少 username（或配置 SSH_USERNAME）", code="missing_username")
+        raise SshError("缺少 username（或配置 SSH_USERNAME / 设备别名 device）", code="missing_username")
 
     return {
+        "device": device,
         "host": host,
-        "port": _as_int(args.get("port") or os.environ.get("SSH_PORT"), DEFAULT_PORT),
+        "port": _as_int(_pick(args, profile, "port", "SSH_PORT"), DEFAULT_PORT),
         "username": username,
-        "password": str(args.get("password") or os.environ.get("SSH_PASSWORD", "")),
-        "private_key": str(args.get("private_key") or os.environ.get("SSH_PRIVATE_KEY", "")),
+        "password": str(_pick(args, profile, "password", "SSH_PASSWORD") or ""),
+        "private_key": str(_pick(args, profile, "private_key", "SSH_PRIVATE_KEY") or ""),
         "private_key_path": os.path.expanduser(str(
-            args.get("private_key_path") or os.environ.get("SSH_PRIVATE_KEY_PATH", "")
+            _pick(args, profile, "private_key_path", "SSH_PRIVATE_KEY_PATH") or ""
         )),
-        "passphrase": str(args.get("passphrase") or os.environ.get("SSH_PASSPHRASE", "")),
+        "passphrase": str(_pick(args, profile, "passphrase", "SSH_PASSPHRASE") or ""),
         "strict_host_key": _as_bool(
-            args.get("strict_host_key", os.environ.get("SSH_STRICT_HOST_KEY")), False
+            _pick(args, profile, "strict_host_key", "SSH_STRICT_HOST_KEY"), False
         ),
-        "host_key_policy": _resolve_host_key_policy(args),
-        "known_hosts": _known_hosts_file(args),
-        "timeout": _as_float(
-            args.get("timeout", os.environ.get("SSH_TIMEOUT")), DEFAULT_TIMEOUT
-        ),
+        "host_key_policy": _resolve_host_key_policy(args, profile),
+        "known_hosts": _known_hosts_file(args, profile),
+        "timeout": _as_float(_pick(args, profile, "timeout", "SSH_TIMEOUT"), DEFAULT_TIMEOUT),
     }
 
 
@@ -477,6 +543,7 @@ def _act_exec(args):
         "stdout": out.decode("utf-8", errors="replace"),
         "stderr": err.decode("utf-8", errors="replace"),
         "host_key": host_key,
+        **( {"device": cfg["device"]} if cfg["device"] else {} ),
     })
 
 
@@ -570,6 +637,7 @@ def _act_upload(args):
         "files": files,
         "bytes": total_bytes,
         "host_key": host_key,
+        **( {"device": cfg["device"]} if cfg["device"] else {} ),
     })
 
 
@@ -634,6 +702,7 @@ def _act_download(args):
         "files": files,
         "bytes": total_bytes,
         "host_key": host_key,
+        **( {"device": cfg["device"]} if cfg["device"] else {} ),
     })
 
 
@@ -661,7 +730,8 @@ def _write_all_lines(path, lines):
 def _act_host_key(args):
     """已保存的主机公钥：op=list 列出 / op=remove 按主机删除。"""
     op = str(args.get("op") or "list").strip().lower()
-    path = _known_hosts_file(args)
+    _device, profile = _device_profile(args)
+    path = _known_hosts_file(args, profile)
 
     if op == "list":
         lines, error = _read_known_hosts_lines(path)
@@ -681,10 +751,10 @@ def _act_host_key(args):
         return _ok(result)
 
     if op == "remove":
-        host = str(args.get("host") or "").strip()
+        host = str(args.get("host") or profile.get("host") or "").strip()
         if not host:
-            return _error("缺少 host 参数", code="missing_host")
-        port = _as_int(args.get("port") or os.environ.get("SSH_PORT"), DEFAULT_PORT)
+            return _error("缺少 host 参数（或设备别名 device）", code="missing_host")
+        port = _as_int(_pick(args, profile, "port", "SSH_PORT"), DEFAULT_PORT)
         target = _known_host_name(host, port)
         # 允许直接传 known_hosts 里的完整写法（[host]:port / host:port）
         names = {target}
@@ -717,12 +787,154 @@ def _act_host_key(args):
     return _error("未知 op '%s'，可用: list, remove" % op, code="unknown_op")
 
 
+# ============================ devices ============================
+DEVICE_FIELDS = (
+    "host", "port", "username", "password", "private_key_path", "private_key",
+    "passphrase", "host_key_policy", "known_hosts", "timeout", "strict_host_key",
+)
+
+
+def _device_summary(name, profile):
+    """设备摘要：不返回密码 / 私钥原文，只说明认证方式。"""
+    if profile.get("private_key_path") or profile.get("private_key"):
+        auth = "key"
+    elif profile.get("password"):
+        auth = "password"
+    else:
+        auth = "agent"
+    item = {
+        "device": name,
+        "host": profile.get("host", ""),
+        "port": _as_int(profile.get("port"), DEFAULT_PORT),
+        "username": profile.get("username", ""),
+        "auth": auth,
+    }
+    for key in ("private_key_path", "known_hosts"):
+        if profile.get(key):
+            item[key] = profile[key]
+    return item
+
+
+def _act_devices(args):
+    """设备别名管理：op=list|show|add|remove，写入 config.json 的 HOSTS。"""
+    op = str(args.get("op") or "list").strip().lower()
+    profiles = _device_profiles()
+
+    if op == "list":
+        names = sorted(profiles)
+        result = {
+            "op": op,
+            "config": _config_path(),
+            "count": len(names),
+            "devices": [_device_summary(name, profiles[name]) for name in names],
+        }
+        if not names:
+            result["note"] = "还没有设备：用 op=add 添加，或写入 config.json 的 HOSTS"
+        return _ok(result)
+
+    name = str(args.get("device") or os.environ.get("SSH_DEVICE") or "").strip()
+
+    if op == "show":
+        if not name:
+            return _error("缺少 device 参数", code="missing_device")
+        if name not in profiles:
+            return _error("未知设备 '%s'" % name, code="unknown_device")
+        return _ok({"op": op, "config": _config_path(),
+                    "device": _device_summary(name, profiles[name])})
+
+    if op == "add":
+        if not name:
+            return _error("缺少 device 参数（设备别名）", code="missing_device")
+        entry = dict(profiles.get(name) or {})
+        for key in DEVICE_FIELDS:
+            value = args.get(key)
+            if value is None or value == "":
+                continue
+            entry[key] = value
+        if not entry.get("host"):
+            return _error("缺少 host 参数（设备的实际地址）", code="missing_host")
+        cfg = dict(_CONFIG)
+        hosts = cfg.get("HOSTS") if isinstance(cfg.get("HOSTS"), dict) else {}
+        hosts = dict(hosts)
+        hosts[name] = entry
+        cfg["HOSTS"] = hosts
+        try:
+            _save_config(cfg)
+        except OSError as exc:
+            return _error("写入 config.json 失败: %s" % exc, code="config_write_failed")
+        return _ok({"op": op, "config": _config_path(),
+                    "device": _device_summary(name, entry)})
+
+    if op == "remove":
+        if not name:
+            return _error("缺少 device 参数", code="missing_device")
+        if name not in profiles:
+            return _error("未知设备 '%s'" % name, code="unknown_device")
+        cfg = dict(_CONFIG)
+        hosts = dict(cfg.get("HOSTS") or {})
+        hosts.pop(name, None)
+        cfg["HOSTS"] = hosts
+        try:
+            _save_config(cfg)
+        except OSError as exc:
+            return _error("写入 config.json 失败: %s" % exc, code="config_write_failed")
+        return _ok({"op": op, "config": _config_path(), "device": name, "removed": True})
+
+    return _error("未知 op '%s'，可用: list, show, add, remove" % op, code="unknown_op")
+
+
+# ============================ exec_batch ============================
+def _act_exec_batch(args):
+    """多设备并发执行同一条命令；每台设备的结果独立返回。"""
+    raw = args.get("devices")
+    if isinstance(raw, str):
+        raw = [raw]
+    names = [str(item).strip() for item in (raw or []) if str(item).strip()]
+    command = str(args.get("command") or "").strip()
+    if not names:
+        return _error("缺少 devices 参数（设备别名数组）", code="missing_devices")
+    if not command:
+        return _error("缺少 command 参数", code="missing_command")
+
+    def run_one(name):
+        try:
+            env = _act_exec(dict(args, device=name))
+        except SshError as exc:
+            return name, {"ok": False, "error": str(exc), "code": exc.code}
+        except Exception as exc:  # 兜底：单台失败不影响其它设备
+            return name, {"ok": False, "error": str(exc), "code": "internal"}
+        if env.get("status") == "ok":
+            result = env["result"]
+            return name, {
+                "ok": True,
+                "exit_status": result["exit_status"],
+                "stdout": result["stdout"],
+                "stderr": result["stderr"],
+                "host_key": result.get("host_key"),
+            }
+        return name, {"ok": False, "error": env.get("error"), "code": env.get("code")}
+
+    results = {}
+    with ThreadPoolExecutor(max_workers=min(8, len(names))) as pool:
+        for name, item in pool.map(run_one, names):
+            results[name] = item
+
+    return _ok({
+        "command": command,
+        "devices": names,
+        "failed": [name for name in names if not results[name]["ok"]],
+        "results": results,
+    })
+
+
 # ============================ 分发 ============================
 ACTIONS = {
     "exec": _act_exec,
+    "exec_batch": _act_exec_batch,
     "upload": _act_upload,
     "download": _act_download,
     "host_key": _act_host_key,
+    "devices": _act_devices,
 }
 
 
