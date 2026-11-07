@@ -215,6 +215,16 @@
       "config": ["QBIT_URL", "QBIT_HOST", "QBIT_PORT", "QBIT_USERNAME", "QBIT_PASSWORD", "QBIT_API_KEY"]
     },
     {
+      "name": "rtk_web",
+      "description": "rtk-web 文本压缩（HTTP 服务）：执行命令 / 压缩文本 / 上传文件，返回 LLM 精简输出与节省统计",
+      "platform": ["linux", "windows", "android"],
+      "path": "rtk_web",
+      "entry": "skill.py",
+      "version": "1.0.2",
+      "requires": [],
+      "config": ["RTK_WEB_HOST"]
+    },
+    {
       "name": "s1",
       "description": "Stage1st（S1/Discuz!）论坛浏览：版块列表 / 帖子列表 / 帖子内容 / 登录 / 回复",
       "platform": ["linux", "windows", "android", "ios"],

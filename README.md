@@ -34,6 +34,7 @@ shell-skills/
 ├── phone_thermal/      手机各部位温度（按温度降序，仅 Android）
 ├── pngenc/             PNG 工具：draw / encode / decode（Pillow 抗锯齿/文字仅桌面，移动端不可用）
 ├── qbittorrent/        qBittorrent 下载管理（新建 / 列表 / 详情 / 暂停 / 继续 / 删除）
+├── rtk_web/            rtk-web 文本压缩（HTTP 服务）：命令输出 / 文本 / 文件 → 精简文本 + 节省统计
 ├── s1/                 Stage1st 论坛浏览（版块 / 帖子 / 回复 / 登录）
 ├── script/             脚本/代码增删改查 + 结构骨架
 ├── sensor/             Android 传感器读取（列出传感器名 / 按名称读实时值；仅 Android）
