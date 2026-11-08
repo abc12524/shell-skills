@@ -3,7 +3,7 @@
 # status: enable
 # usage:
 #   action = read | outline | create | add | edit | delete
-#            （patch / rename_symbol 是 edit 的快捷方式，仍可用）
+#            （patch / rename_symbol 是 edit 的快捷方式；delete+force=true 删整个文件）
 #   数据源: path（本地可写 / http(s) 只读）；read 缺省给骨架，pattern 按符号名/正则检索
 #   定位: symbol / start_line+end_line / old_code / block+start_line（最小语法块）
 #   position（配 symbol/block）: add=start|end|before|after；edit=before|after，省略整段替换
@@ -25,9 +25,10 @@ _CORE_ARGS = (
     "action", "path", "language", "symbol", "pattern", "start_line", "end_line",
     "old_code", "new_code", "replace_all", "dry_run", "position", "with_calls",
     "edits", "files", "rename_to", "new_name", "expected_sha256", "validate", "block",
+    "force",
 )
 _ALIAS_ARGS = (
-    "file_path", "url", "content", "replacements", "limit", "diff_context",
+    "file_path", "url", "content", "code", "replacements", "limit", "diff_context",
     "deadline_ms", "strip_prefixes", "encoding",
 )
 _ARGS = _CORE_ARGS + _ALIAS_ARGS
@@ -43,6 +44,8 @@ def run(arguments):
     new_code = a.get("new_code")
     if new_code is None:
         new_code = a.get("content")          # content 是 new_code 的别名
+    if new_code is None:
+        new_code = a.get("code")             # code 是更直觉的别名
     path = a.get("path")
     file_path = a.get("file_path")
     url = a.get("url")
@@ -83,5 +86,6 @@ def run(arguments):
         new_name=a.get("new_name"),
         edits=edits,
         block=a.get("block", False),
+        force=a.get("force", False),
         strip_prefixes=a.get("strip_prefixes", True),
     )

@@ -16,7 +16,7 @@ except ImportError:  # shell-tool：使用 core.tools.envelope
     from core.tools.envelope import ok, error
 
 from ._text import (_join_lines, _make_diff, _new_lines, _short_path, _split_lines,
-                    file_sha256, write_file)
+                    _symlink_guard, file_sha256, write_file)
 
 from ._symbols import SymbolRange, validate_source
 
@@ -592,6 +592,27 @@ def _create_file(file_path, new_code, dry_run=False):
     if werr:
         return error(werr, code="io_error")
     payload["file_id"] = file_sha256(file_path)
+    return ok(payload)
+
+
+def _delete_file(file_path, before, dry_run=False, diff_context=None):
+    """删除整个文件（调用方已确认 force=true）；返回删除 diff，dry_run 只预览。"""
+    link_err = _symlink_guard(file_path)
+    if link_err:
+        return error(link_err, code="is_symlink")
+    payload = {"action": "delete", "file": _short_path(file_path),
+               "deleted_file": True, "lines": [len(before.splitlines()), 0]}
+    text, truncated, _ = _make_diff(before, "", diff_context)
+    payload["diff"] = text
+    if truncated:
+        payload["diff_truncated"] = True
+    if dry_run:
+        payload["dry_run"] = True
+        return ok(payload)
+    try:
+        os.remove(file_path)
+    except OSError as e:
+        return error(f"删除失败 - {e}", code="io_error")
     return ok(payload)
 
 

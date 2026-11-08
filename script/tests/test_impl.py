@@ -334,12 +334,62 @@ class ScriptEditorTests(unittest.TestCase):
 
     def test_core_args_surface(self):
         from script.skill import _ALIAS_ARGS, _CORE_ARGS
-        for hidden in ("file_path", "url", "content", "replacements", "limit",
+        for hidden in ("file_path", "url", "content", "code", "replacements", "limit",
                        "diff_context", "deadline_ms", "strip_prefixes", "encoding"):
             self.assertNotIn(hidden, _CORE_ARGS)
             self.assertIn(hidden, _ALIAS_ARGS)
-        for core in ("path", "edits", "files", "new_name", "block", "expected_sha256"):
+        for core in ("path", "edits", "files", "new_name", "block", "expected_sha256",
+                     "force"):
             self.assertIn(core, _CORE_ARGS)
+
+    def test_rust_lifetime_outline(self):
+        code = ("pub fn header_of<'a>(response: &'a Response, name: &str) -> Option<&'a str> {\n"
+                "    response.headers().get(name)\n"
+                "}\n\n"
+                "pub async fn multipart_request(req: &mut Request) -> Result<()> {\n"
+                "    Ok(())\n"
+                "}\n\n"
+                "pub fn uploaded_log_file_is_compressed(name: &str) -> bool {\n"
+                "    name.ends_with(\".gz\")\n"
+                "}\n")
+        path = self._write("a.rs", code)
+        result = script_editor(action="outline", path=path)
+        self.assertEqual(result["status"], "ok", result)
+        body = result["result"]["result"]
+        self.assertIn("header_of<'a>", body)
+        self.assertIn("L1-3", body)
+        self.assertIn("multipart_request", body)
+        self.assertIn("L5-7", body)
+        self.assertIn("uploaded_log_file_is_compressed", body)
+        self.assertIn("L9-11", body)
+
+    def test_delete_whole_file_requires_force(self):
+        path = self._write("a.py", "x = 1\n")
+        result = script_editor(action="delete", path=path)
+        self.assertEqual(result["status"], "error")
+        self.assertEqual(result["code"], "missing_argument")
+        self.assertTrue(os.path.exists(path))
+
+    def test_delete_whole_file_with_force(self):
+        path = self._write("a.py", "x = 1\n")
+        result = script_editor(action="delete", path=path, force=True)
+        self.assertEqual(result["status"], "ok", result)
+        self.assertTrue(result["result"]["deleted_file"])
+        self.assertFalse(os.path.exists(path))
+        self.assertIn("-x = 1", result["result"]["diff"])
+
+    def test_delete_whole_file_dry_run(self):
+        path = self._write("a.py", "x = 1\n")
+        result = script_editor(action="delete", path=path, force=True, dry_run=True)
+        self.assertEqual(result["status"], "ok", result)
+        self.assertTrue(result["result"]["dry_run"])
+        self.assertTrue(os.path.exists(path))
+
+    def test_code_alias(self):
+        path = os.path.join(self.tmp.name, "alias.py")
+        result = run({"action": "create", "path": path, "code": "x = 1\n"})
+        self.assertEqual(result["status"], "ok", result)
+        self.assertEqual(self._read(path), "x = 1\n")
 
 
 if __name__ == "__main__":

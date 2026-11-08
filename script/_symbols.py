@@ -255,6 +255,19 @@ class BraceParser:
                         out.append(cls._blank(segment))
                         i = end
                         continue
+            # Rust 生命周期（'a / 'static / '_）不是字符字面量；否则会把
+            # `&'a Response` 到下一个 `'` 之间的代码全部当成字符串屏蔽，
+            # 导致函数体花括号被吞、块结束行滑到文件尾。
+            if c == "'" and cls.LANG == "rust":
+                j = i + 1
+                if j < n and (code[j].isalpha() or code[j] == "_"):
+                    k = j
+                    while k < n and (code[k].isalnum() or code[k] == "_"):
+                        k += 1
+                    if k >= n or code[k] != "'":
+                        out.append(" " * (k - i))
+                        i = k
+                        continue
             if c in ('"', "'", "`"):
                 quote = c
                 out.append(" ")
@@ -425,7 +438,7 @@ class BraceParser:
             body_start = body_end = end + 1
         symbols.append(SymbolRange(
             name=name, kind=kind, start=start + 1, end=end + 1,
-            signature=self._signature(raw_name, prefix, kind, stripped),
+            signature=self._signature(raw_name, prefix, kind, self.lines[i].strip()),
             indent=self._indent_of(start), body_start=body_start, body_end=body_end))
         if kind in ("function", "method"):
             cs = self._collect_calls(i, end)

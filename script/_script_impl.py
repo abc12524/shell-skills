@@ -40,8 +40,8 @@ from ._symbols import (  # noqa: F401
 )
 from ._edits import (  # noqa: F401
     _DEF_LIKE_RE, _add_after, _auto_indent, _body_indent, _closest_lines, _create_file,
-    _def_gap, _def_like, _finish, _hint_msg, _indent_unit, _insert_at_line, _multi_msg,
-    _pad_blank, _prepare, _replace, _replace_lines, _tidy_seam, _validate_mode,
+    _def_gap, _def_like, _delete_file, _finish, _hint_msg, _indent_unit, _insert_at_line,
+    _multi_msg, _pad_blank, _prepare, _replace, _replace_lines, _tidy_seam, _validate_mode,
 )
 from ._views import (  # noqa: F401
     _emit_matches, _emit_range, _emit_symbols, _parse_or_fail, _read, _resolve_symbols,
@@ -316,7 +316,7 @@ def script_editor(action: str = None, path: str = None, file_path: str = None,
                   expected_sha256: str = None, validate=None, deadline_ms: int = 30000,
                   encoding: str = None, files=None, rename_to: str = None,
                   new_name: str = None, edits=None, block: bool = False,
-                  strip_prefixes: bool = True) -> str:
+                  force: bool = False, strip_prefixes: bool = True) -> str:
     """脚本编辑 + 结构化读取工具（对齐 OpenViking / DSH 规范信封）。
 
     数据来源：path（本地文件可写 / http(s) 只读）；file_path、url 为兼容别名。
@@ -610,6 +610,11 @@ def script_editor(action: str = None, path: str = None, file_path: str = None,
         sym = block_sym
 
     if act == "delete":
+        if sym is None and not line_mode and not old_code and not block:
+            if not force:
+                return error("delete 无 symbol/start_line/old_code/block 时会删除整个文件；"
+                             "确认删除请传 force=true", code="missing_argument")
+            return _delete_file(file_path, code, dry_run=dry_run, diff_context=diff_context)
         if sym is not None:
             s, e = sym.start, sym.end
             # 连同紧随的空行一起删（最多 2 行）；以符号末尾为基准，否则长符号会把自身跨度
