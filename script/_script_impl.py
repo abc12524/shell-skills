@@ -35,7 +35,8 @@ from ._symbols import (  # noqa: F401
     MAX_CANDIDATES, MAX_SYMBOLS, PARSERS, BraceParser, CSharpParser, CppParser, GoParser,
     JavaParser, JavaScriptParser, KotlinParser, ParseResult, PhpParser, PythonParser, RustParser,
     ShellParser, SwiftParser, SymbolRange, TypeScriptParser, _LANG_ALIAS, _is_plain,
-    _normalize_language, build_skeleton, get_parser, render_skeleton, validate_source,
+    _normalize_language, build_skeleton, enclosing_block, get_parser, render_skeleton,
+    validate_source,
 )
 from ._edits import (  # noqa: F401
     _DEF_LIKE_RE, _add_after, _auto_indent, _body_indent, _closest_lines, _create_file,
@@ -56,6 +57,81 @@ def _norm_text(value):
 
 MAX_REPLACEMENTS = 200
 MAX_PATCH_FILES = 50
+
+_READ_PREFIX_RE = re.compile(r"^\s*(\d+):[ \t]?(.*)$")
+_HASHLINE_HEADER_RE = re.compile(r"^\s*\[[^#\r\n]+#[0-9A-Fa-f]{4}\]\s*$")
+_READ_RANGE_RE = re.compile(r"^(.*):(\d+)(?:-(\d+))?$")
+
+
+def _strip_read_prefixes(text):
+    """剥离从 read 输出复制来的 `[PATH#TAG]` 头和 `N: ` 行号前缀。
+
+    只有所有非空行都形如 `N: ` 且行号严格递增时才动手，避免误删真实代码里的
+    `123: value` 之类内容。返回 (text, stripped)。
+    """
+    if not text:
+        return text, False
+    lines = text.split("\n")
+    stripped_header = False
+    if lines and _HASHLINE_HEADER_RE.match(lines[0] or ""):
+        lines = lines[1:]
+        stripped_header = True
+    matches = []
+    last = 0
+    for idx, line in enumerate(lines):
+        if not line.strip():
+            continue
+        m = _READ_PREFIX_RE.match(line)
+        if not m:
+            return text, stripped_header
+        num = int(m.group(1))
+        if num <= last:
+            return text, stripped_header
+        last = num
+        matches.append((idx, m.group(2)))
+    if not matches:
+        return text, stripped_header
+    out = list(lines)
+    for idx, content in matches:
+        out[idx] = content
+    return "\n".join(out), True
+
+
+def _guard_write_target(file_path):
+    """拒绝把 read 的 `path:1-20` 或分号拼接的目标列表当成写路径。"""
+    if not file_path:
+        return None
+    try:
+        if os.path.exists(file_path):
+            return None
+    except OSError:
+        pass
+    m = _READ_RANGE_RE.match(file_path)
+    if m and m.group(1):
+        return (f"{file_path} 看起来是 read 的行范围（path:start-end），不是文件路径；"
+                f"请改用 file_path={m.group(1)!r}")
+    if ";" in file_path:
+        parts = [p.strip() for p in file_path.split(";") if p.strip()]
+        if len(parts) >= 2 and any(_READ_RANGE_RE.match(p) or re.search(r":\d", p)
+                                   for p in parts):
+            return f"{file_path} 看起来是多个 read 目标，不是单个文件路径"
+    return None
+
+
+def _block_range(code, language, line):
+    """把 enclosing_block 的 (start,end,kind) 包成 SymbolRange，复用符号编辑分支。"""
+    found = enclosing_block(code, language, line)
+    if not found:
+        return None
+    start, end, kind = found
+    lines = code.splitlines()
+    indent = re.match(r"[ \t]*", lines[start - 1]).group(0) if 1 <= start <= len(lines) else ""
+    inner_start = start + 1 if end > start else start
+    inner_end = end - 1 if end > start else end
+    return SymbolRange(
+        name=f"block L{start}-{end}", kind="block", start=start, end=end,
+        signature=f"{kind} L{start}-{end}", indent=indent,
+        body_start=inner_start, body_end=inner_end)
 
 
 class _DeadlineExceeded(Exception):
@@ -79,10 +155,13 @@ def _check_deadline(deadline):
         raise _DeadlineExceeded()
 
 
-def _norm_replacements(raw, default_all=False):
-    """批量替换参数归一：[{old_code, new_code, replace_all?}] -> [(old, new, all)]
+def _norm_replacements(raw, default_all=False, strip=True):
+    """批量替换参数归一：[{old_code, new_code, replace_all?, capture?, paste?}]
+    -> [(old, new, all, capture, paste)]
 
     返回 (items, err)。old_code 必填；new_code 缺省为空串（即删除该片段）。
+    capture 把 old_code 原文存入命名寄存器并删除；paste 用寄存器内容覆盖 old_code。
+    寄存器只在一次 script_editor 调用（patch 的多个文件共享）内有效。
     """
     if not isinstance(raw, (list, tuple)):
         return None, "replacements 需为数组 [{\"old_code\":..., \"new_code\":...}, ...]"
@@ -99,7 +178,19 @@ def _norm_replacements(raw, default_all=False):
             return None, f"第 {i} 组缺少 old_code"
         new = _norm_text(item.get("new_code")) or ""
         all_ = item.get("replace_all")
-        items.append((old, new, default_all if all_ is None else bool(all_)))
+        capture = item.get("capture")
+        paste = item.get("paste")
+        if capture and paste:
+            return None, f"第 {i} 组 capture 与 paste 不能同时使用"
+        for name, value in (("capture", capture), ("paste", paste)):
+            if value is not None and (not isinstance(value, str)
+                                      or not re.fullmatch(r"[A-Za-z_]\w*", value)):
+                return None, f"第 {i} 组 {name} 需为合法寄存器名（字母/数字/下划线）"
+        if capture and new.strip():
+            return None, f"第 {i} 组 capture 只做剪切，不能同时给 new_code"
+        if strip:
+            new, _stripped = _strip_read_prefixes(new)
+        items.append((old, new, default_all if all_ is None else bool(all_), capture, paste))
     return items, None
 
 
@@ -109,24 +200,40 @@ def _snippet(text, width=60):
     return first if len(first) <= width else first[:width] + "…"
 
 
-def _apply_replacements(code, items, unit, deadline=None):
+def _apply_replacements(code, items, unit, deadline=None, registers=None):
     """按顺序应用多组替换（后一组看到前一组的结果）。
 
+    registers 是本次调用共享的命名寄存器（capture 写入、paste 读取）。
     返回 (new_src, rows, err, err_code)；任一组失败即整体放弃（new_src=None）。
     """
     cur = code
     rows = []
-    for i, (old, new, all_) in enumerate(items, 1):
+    registers = {} if registers is None else registers
+    for i, (old, new, all_, capture, paste) in enumerate(items, 1):
         _check_deadline(deadline)
+        if paste:
+            if paste not in registers:
+                return (None, rows,
+                        f"第 {i} 组引用了未定义的寄存器 @{paste}（先用 capture 捕获）",
+                        "empty_register")
+            new = registers[paste]
+        if capture:
+            registers[capture] = old
         if old == new:
             rows.append({"index": i, "old_code": _snippet(old), "count": 0,
                          "skipped": "identical"})
+            if capture:
+                rows[-1]["captured"] = capture
             continue
         new_src, count, err, ecode, meta = _replace(cur, old, new, all_, unit)
         if err:
             hint = _hint_msg(cur, old) if ecode == "not_found" else ""
             return None, rows, f"第 {i} 组（{_snippet(old)}）替换失败: {err}{hint}", ecode
         row = {"index": i, "old_code": _snippet(old), "count": count}
+        if capture:
+            row["captured"] = capture
+        if paste:
+            row["pasted"] = paste
         if meta:
             row.update(meta)
         rows.append(row)
@@ -208,7 +315,8 @@ def script_editor(action: str = None, file_path: str = None, url: str = None,
                   diff_context: int = None, replacements=None,
                   expected_sha256: str = None, validate=None, deadline_ms: int = None,
                   encoding: str = None, files=None, rename_to: str = None,
-                  new_name: str = None, edits=None) -> str:
+                  new_name: str = None, edits=None, block: bool = False,
+                  strip_prefixes: bool = True) -> str:
     """脚本编辑 + 结构化读取工具（对齐 OpenViking / DSH 规范信封）。
 
     数据来源（二选一）：file_path（本地文件，可写）或 url（http/https，只读）。
@@ -239,6 +347,9 @@ def script_editor(action: str = None, file_path: str = None, url: str = None,
     content_given = new_code is not None       # 显式空串也算给了内容（建空文件）
     old_code = _norm_text(old_code)
     new_code = _norm_text(new_code) or ""
+    stripped_prefixes = False
+    if strip_prefixes and new_code:
+        new_code, stripped_prefixes = _strip_read_prefixes(new_code)
     pos = (position or "").strip().lower()
     try:
         limit = int(limit) if limit else DEFAULT_LIMIT
@@ -277,12 +388,19 @@ def script_editor(action: str = None, file_path: str = None, url: str = None,
     if rpl is not None:
         if act != "edit":
             return error("replacements 仅配合 action=edit 使用", code="invalid_argument")
-        if symbol or start_line is not None or old_code:
-            return error("replacements 与 symbol/start_line/old_code 互斥，请只给一种定位方式",
+        if symbol or start_line is not None or old_code or block:
+            return error("replacements 与 symbol/start_line/old_code/block 互斥，请只给一种定位方式",
                          code="conflicting_target")
         if new_code:
             return error("使用 replacements 时不要再给顶层 new_code（每组自带）",
                          code="conflicting_target")
+
+    if block:
+        if symbol or old_code:
+            return error("block 与 symbol/old_code 互斥，请只给一种定位方式",
+                         code="conflicting_target")
+        if start_line is None:
+            return error("block 需要提供 start_line（块内任意行）", code="missing_argument")
 
     # 写动作（含 create）一律拒绝软链接：os.replace 会用普通文件顶掉链接节点，
     # 把链接关系毁掉；只读动作不受影响
@@ -291,6 +409,9 @@ def script_editor(action: str = None, file_path: str = None, url: str = None,
         link_err = _symlink_guard(file_path)
         if link_err:
             return error(link_err, code="is_symlink")
+        target_err = _guard_write_target(file_path)
+        if target_err:
+            return error(target_err, code="looks_like_read_target")
     if act == "patch":
         return _run_patch(files, file_path, edits, rename_to, replace_all,
                           dry_run=dry_run, diff_context=diff_context,
@@ -320,7 +441,10 @@ def script_editor(action: str = None, file_path: str = None, url: str = None,
             ok_src, verr = validate_source(prepared, lang)
             if not ok_src:
                 return error(f"新建内容语法校验失败 - {verr}", code="parse_failed")
-        return _create_file(file_path, prepared, dry_run)
+        result = _create_file(file_path, prepared, dry_run)
+        if stripped_prefixes and result.get("status") == "ok":
+            result["result"]["stripped_prefixes"] = True
+        return result
 
     file_encoding, newline = "utf-8", "\n"
     writable = False
@@ -365,6 +489,14 @@ def script_editor(action: str = None, file_path: str = None, url: str = None,
                  if language and _is_plain(language) else None)
 
     if act == "read":
+        if block:
+            block_line = _as_int(start_line)
+            block_sym = _block_range(code, language, block_line) if block_line else None
+            if not block_sym:
+                return error("未找到包含该行的语法块，请用 outline 或 read 确认行号",
+                             code="block_not_found")
+            return _emit_range(code, block_sym.start, block_sym.end, limit, src,
+                               note=block_sym.signature)
         return _read(code, language, symbol, pattern, start_line, end_line, limit, src,
                      with_calls, lang_note)
 
@@ -402,10 +534,16 @@ def script_editor(action: str = None, file_path: str = None, url: str = None,
         return error("url 为只读，不能修改", code="read_only")
 
     lines = code.splitlines()
+    line_shifted = None
     unit = _indent_unit(lines)
     top_gap = 2 if _normalize_language(language) == "python" else 1
 
     def finish(op, count, count_key, new_src, before=None, extra=None):
+        extra = dict(extra or {})
+        if line_shifted:
+            extra["line_shifted"] = line_shifted
+        if stripped_prefixes:
+            extra["stripped_prefixes"] = True
         return _finish(file_path, file_encoding, newline, op, count, count_key, new_src,
                        before=before, dry_run=dry_run, diff_context=diff_context,
                        extra=extra, validate=validate_mode, language=language)
@@ -437,10 +575,9 @@ def script_editor(action: str = None, file_path: str = None, url: str = None,
         if s and e and s >= 1 and e <= len(lines) and s <= e:
             actual = "\n".join(lines[s - 1:e])
             if actual.rstrip("\n") != old_code.rstrip("\n") and actual.strip() != old_code.strip():
-                return error(
-                    f"start_line~end_line ({s}-{e}) 的内容与 old_code 不一致，已中止以免改错行；"
-                    f"实际内容为:\n{_numbered(lines, s, min(e, s + 20))}",
-                    code="range_mismatch")
+                # 行号已漂移：改用 old_code 内容重新定位，而不是直接拒绝
+                line_shifted = f"{s}-{e}"
+                line_mode = False
         else:
             return error(f"行范围非法: {s}-{e}（共 {len(lines)} 行）", code="bad_range")
 
@@ -459,6 +596,13 @@ def script_editor(action: str = None, file_path: str = None, url: str = None,
             return error(f"symbol 需唯一命中，实际 {len(selected)} 个: {cands}",
                          code="ambiguous_symbol")
         sym = selected[0]
+
+    if block and sym is None:
+        block_sym = _block_range(code, language, _as_int(start_line))
+        if not block_sym:
+            return error("未找到包含该行的语法块，请用 outline 或 read 确认行号",
+                         code="block_not_found")
+        sym = block_sym
 
     if act == "delete":
         if sym is not None:
@@ -649,6 +793,7 @@ def _run_patch(files, file_path, edits, rename_to, default_all, dry_run=False,
     if err:
         return error(err, code="invalid_argument")
     staged = []
+    registers = {}
     try:
         for item in items:
             _check_deadline(deadline)
@@ -656,6 +801,9 @@ def _run_patch(files, file_path, edits, rename_to, default_all, dry_run=False,
             link_err = _symlink_guard(path)
             if link_err:
                 return error(link_err, code="is_symlink")
+            target_err = _guard_write_target(path)
+            if target_err:
+                return error(f"{path}: {target_err}", code="looks_like_read_target")
             code, file_encoding, newline, io_err = read_file(path, encoding=encoding)
             if io_err:
                 return error(f"{path}: {io_err}", code="io_error")
@@ -664,7 +812,8 @@ def _run_patch(files, file_path, edits, rename_to, default_all, dry_run=False,
                 return error(f"{path}: 文件在读取后已被修改（sha256 不匹配）", code="stale_file")
             lang = infer_language(path)
             unit = _indent_unit(code.splitlines())
-            new_src, rows, berr, becode = _apply_replacements(code, item["edits"], unit, deadline)
+            new_src, rows, berr, becode = _apply_replacements(code, item["edits"], unit,
+                                                              deadline, registers=registers)
             if berr:
                 return error(f"{path}: {berr}", code=becode or "replace_failed")
             if new_src == code:

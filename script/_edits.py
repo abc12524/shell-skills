@@ -219,7 +219,12 @@ def _line_key(line: str, level: str) -> str:
 
 
 def _fuzzy_hits(lines: List[str], old_code: str):
-    """逐行模糊匹配，返回 (level, [(起始下标, 结束下标)])；先 stripped 后 normalized"""
+    """逐行模糊匹配，返回 (level, [(起始下标, 结束下标)])。
+
+    依次降级：stripped（忽略缩进）→ normalized（忽略标点）→ shifted（整体高相似度
+    滑窗，容忍插入/删除行造成的行号漂移）。shifted 只接受唯一最优窗口；多个窗口
+    分数接近时全部返回，由上层按“多处歧义”处理。
+    """
     want = (old_code or "").split("\n")
     while want and not want[0].strip():
         want.pop(0)
@@ -239,12 +244,27 @@ def _fuzzy_hits(lines: List[str], old_code: str):
                 last = i + n - 1
         if hits:
             return level, hits
-    return None, []
+    if n < 2:                                   # 单行不做相似度漂移，误命中面太大
+        return None, []
+    want_text = "\n".join(want)
+    window_limit = min(len(lines) - n + 1, 5000)
+    scored = []
+    for i in range(window_limit):
+        ratio = difflib.SequenceMatcher(None, want_text, "\n".join(lines[i:i + n])).ratio()
+        if ratio >= 0.80:
+            scored.append((ratio, i))
+    if not scored:
+        return None, []
+    scored.sort(reverse=True)
+    top = scored[0][0]
+    near = [(ratio, i) for ratio, i in scored if top - ratio < 0.02]
+    return "shifted", [(i, i + n - 1) for _, i in near[:20]]
 
 
 def _multi_msg_lines(hits, level: str) -> str:
     rows = ", ".join(str(i + 1) for i, _ in hits[:20])
-    why = "忽略缩进" if level == "stripped" else "忽略标点"
+    why = {"stripped": "忽略缩进", "normalized": "忽略标点",
+           "shifted": "相似度漂移"}.get(level, "模糊")
     return (f"old_code 匹配到 {len(hits)} 处（行 {rows}，{why}），无法确定目标；"
             f"请加长片段，或设 replace_all=true 全部替换")
 

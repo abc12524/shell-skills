@@ -236,11 +236,11 @@
     },
     {
       "name": "script",
-      "description": "脚本/代码增删改查（CRUD）+ 结构骨架 + 多文件补丁/符号重命名，写入前语法校验（改代码首选）",
+      "description": "脚本/代码增删改查（CRUD）+ 结构骨架 + 多文件补丁/符号重命名/语法块，写入前语法校验（改代码首选）",
       "platform": ["linux", "windows", "android", "ios"],
       "path": "script",
       "entry": "skill.py",
-      "version": "1.5.0",
+      "version": "1.6.0",
       "requires": [],
       "config": []
     },

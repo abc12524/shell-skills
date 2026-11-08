@@ -189,6 +189,100 @@ class ScriptEditorTests(unittest.TestCase):
         self.assertEqual(result["status"], "error")
         self.assertEqual(result["code"], "unknown_argument")
 
+    def test_shifted_drift_match(self):
+        from script import _edits
+        src = "a=1\nb=2\nc=0\nd=4\ne=5\n"
+        old = "a=1\nb=2\nc=3\nd=4\ne=5"
+        out, _count, err, _code, meta = _edits._replace(src, old, "a=1\nb=2\nc=9\nd=4\ne=5")
+        self.assertIsNone(err)
+        self.assertEqual(meta, {"matched": "shifted"})
+        self.assertIn("c=9", out)
+
+    def test_line_shifted_rescue(self):
+        path = self._write("a.py", "def f():\n    a = 1\n    b = 2\n")
+        result = script_editor(action="edit", file_path=path, start_line=1, end_line=2,
+                               old_code="a = 1\n    b = 2", new_code="a = 9\n    b = 2")
+        self.assertEqual(result["status"], "ok", result)
+        self.assertEqual(result["result"]["line_shifted"], "1-2")
+        self.assertIn("a = 9", self._read(path))
+
+    def test_block_read_and_edit_python(self):
+        path = self._write("a.py", "def f():\n    if x:\n        a = 1\n        b = 2\n    return 0\n")
+        read = script_editor(action="read", file_path=path, block=True, start_line=3)
+        self.assertEqual(read["status"], "ok", read)
+        self.assertIn("L2-4", read["result"].get("note", ""))
+        self.assertIn("if x:", read["result"]["result"])
+        edit = script_editor(action="edit", file_path=path, block=True, start_line=3,
+                             new_code="if x:\n    a = 9\n    b = 2")
+        self.assertEqual(edit["status"], "ok", edit)
+        self.assertIn("a = 9", self._read(path))
+        self.assertIn("return 0", self._read(path))
+
+    def test_block_edit_c(self):
+        path = self._write("a.c", "int f() {\n  if (x) {\n    a = 1;\n  }\n}\n")
+        edit = script_editor(action="edit", file_path=path, block=True, start_line=3,
+                             new_code="if (x) {\n  a = 2;\n}")
+        self.assertEqual(edit["status"], "ok", edit)
+        self.assertIn("a = 2;", self._read(path))
+
+    def test_register_capture_paste_single_file(self):
+        path = self._write("a.py", "def helper():\n    return 1\n\n# slot\n")
+        result = script_editor(action="edit", file_path=path, replacements=[
+            {"old_code": "def helper():\n    return 1\n", "capture": "fn"},
+            {"old_code": "# slot", "paste": "fn"},
+        ])
+        self.assertEqual(result["status"], "ok", result)
+        body = self._read(path)
+        self.assertNotIn("# slot", body)
+        self.assertIn("def helper():", body)
+
+    def test_register_shared_across_patch_files(self):
+        a = self._write("a.py", "def helper():\n    return 1\n")
+        b = self._write("b.py", "# slot\n")
+        result = script_editor(action="patch", files=[
+            {"file_path": a,
+             "edits": [{"old_code": "def helper():\n    return 1\n", "capture": "fn"}]},
+            {"file_path": b, "edits": [{"old_code": "# slot", "paste": "fn"}]},
+        ])
+        self.assertEqual(result["status"], "ok", result)
+        self.assertIn("def helper():", self._read(b))
+
+    def test_missing_register_rejected(self):
+        path = self._write("a.py", "x = 1\n")
+        result = script_editor(action="edit", file_path=path, replacements=[
+            {"old_code": "x = 1", "paste": "nope"},
+        ])
+        self.assertEqual(result["status"], "error")
+        self.assertEqual(result["code"], "empty_register")
+
+    def test_strip_read_prefixes_on_create(self):
+        path = os.path.join(self.tmp.name, "pref.py")
+        result = script_editor(action="create", file_path=path,
+                               new_code="1: def f():\n2:     return 1\n")
+        self.assertEqual(result["status"], "ok", result)
+        self.assertTrue(result["result"].get("stripped_prefixes"))
+        self.assertEqual(self._read(path), "def f():\n    return 1\n")
+
+    def test_strip_prefixes_can_be_disabled(self):
+        path = os.path.join(self.tmp.name, "pref2.txt")
+        result = script_editor(action="create", file_path=path,
+                               new_code="1: print(1)\n", strip_prefixes=False)
+        self.assertEqual(result["status"], "ok", result)
+        self.assertEqual(self._read(path), "1: print(1)\n")
+
+    def test_write_target_guard(self):
+        path = self._write("a.py", "x = 1\n")
+        result = script_editor(action="create", file_path=path + ":1-2", new_code="x\n")
+        self.assertEqual(result["status"], "error")
+        self.assertEqual(result["code"], "looks_like_read_target")
+
+    def test_block_conflicts_with_symbol(self):
+        path = self._write("a.py", "def f():\n    pass\n")
+        result = script_editor(action="read", file_path=path, block=True, start_line=1,
+                               symbol="f")
+        self.assertEqual(result["status"], "error")
+        self.assertEqual(result["code"], "conflicting_target")
+
 
 if __name__ == "__main__":
     unittest.main()

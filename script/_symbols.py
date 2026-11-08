@@ -771,3 +771,60 @@ def _is_plain(language) -> bool:
     """语言为空或不在解析器表中时按纯文本处理（md/txt/json 等）"""
     key = _normalize_language(language)
     return not key or key not in PARSERS
+
+_PY_BLOCK_TYPES = [ast.If, ast.For, ast.AsyncFor, ast.While, ast.With, ast.AsyncWith,
+                   ast.Try, ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef]
+if hasattr(ast, "Match"):
+    _PY_BLOCK_TYPES.append(ast.Match)
+
+
+def enclosing_block(code: str, language: str, line: int):
+    """返回包含指定 1-based 行的最小语法块 (start, end, kind)；找不到返回 None。
+
+    Python 优先选 if/for/while/with/try/def/class 等复合语句（至少 2 行），
+    没有复合块时退化为最小语句；大括号语言用括号配对取最内层 {}。
+    纯文本/解析失败返回 None（由调用方报 block_not_found）。
+    """
+    key = _normalize_language(language)
+    if key == "python":
+        try:
+            tree = ast.parse(code)
+        except SyntaxError:
+            return None
+        best = None
+        fallback = None
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.stmt):
+                continue
+            start = PythonParser._start_line(node)
+            end = getattr(node, "end_lineno", None)
+            if end is None or not (start <= line <= end):
+                continue
+            span = end - start
+            kind = f"{type(node).__name__.lower()} block"
+            if isinstance(node, tuple(_PY_BLOCK_TYPES)) and end > start:
+                if best is None or span < best[0]:
+                    best = (span, start, end, kind)
+            if fallback is None or span < fallback[0]:
+                fallback = (span, start, end, kind)
+        chosen = best or fallback
+        return (chosen[1], chosen[2], chosen[3]) if chosen else None
+
+    try:
+        parser = get_parser(code, language)
+    except ValueError:
+        return None
+    stack: List[int] = []
+    candidates: List[Tuple[int, int]] = []
+    for row, text in enumerate(parser.clean.splitlines(), 1):
+        for ch in text:
+            if ch == "{":
+                stack.append(row)
+            elif ch == "}" and stack:
+                start = stack.pop()
+                if start <= line <= row:
+                    candidates.append((start, row))
+    if not candidates:
+        return None
+    start, end = min(candidates, key=lambda pair: pair[1] - pair[0])
+    return start, end, "brace block"

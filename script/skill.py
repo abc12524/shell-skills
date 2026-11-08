@@ -17,6 +17,10 @@
 #   符号重命名: {"action":"rename_symbol","file_path":"a.py","symbol":"old","new_name":"new"}
 #   一致性: read 返回 file_id，写动作传 expected_sha256=file_id，文件被外部改过则拒绝
 #   校验: validate = auto（默认，原文件可解析才拒绝）/ on / off；deadline_ms 可选超时
+#   语法块: block=true + start_line=块内任意行，按最小 if/for/def/class/{} 块编辑或读取
+#   寄存器: replacements 每组可 capture=名字（剪切并保存）或 paste=名字（粘贴），单次调用内共享
+#   前缀剥离: new_code/content 若整段带 read 的 `N: ` 行号前缀，默认自动剥离（strip_prefixes=false 关闭）
+#   写目标保护: 拒绝把 read 的 `a.py:1-20` 或 `a.py;b.py` 误当写路径
 #   缩进用 @n:（相对插入基准，可为负）；超 limit 给 next；old_code 未命中提示最近行号
 #   new_code 也可写成 content（建文件时的常见叫法）；未知参数直接报错，避免写成空文件
 #   例: {"action":"edit","file_path":"a.py","symbol":"parse","new_code":"..."}
@@ -35,7 +39,7 @@ _ARGS = (
     "start_line", "end_line", "limit", "old_code", "new_code", "content",
     "replace_all", "dry_run", "position", "with_calls", "diff_context",
     "replacements", "expected_sha256", "validate", "deadline_ms", "encoding",
-    "files", "rename_to", "new_name", "edits",
+    "files", "rename_to", "new_name", "edits", "block", "strip_prefixes",
 )
 
 
@@ -75,4 +79,6 @@ def run(arguments):
         rename_to=a.get("rename_to"),
         new_name=a.get("new_name"),
         edits=a.get("edits"),
+        block=a.get("block", False),
+        strip_prefixes=a.get("strip_prefixes", True),
     )
