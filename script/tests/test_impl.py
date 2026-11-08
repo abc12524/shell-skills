@@ -283,6 +283,64 @@ class ScriptEditorTests(unittest.TestCase):
         self.assertEqual(result["status"], "error")
         self.assertEqual(result["code"], "conflicting_target")
 
+    def test_path_alias(self):
+        path = self._write("a.py", "x = 1\n")
+        result = run({"action": "read", "path": path})
+        self.assertEqual(result["status"], "ok", result)
+
+    def test_edits_unified_single_edit(self):
+        path = self._write("a.py", "x = 1\n")
+        result = script_editor(action="edit", path=path,
+                               edits=[{"old_code": "x = 1", "new_code": "x = 2"}])
+        self.assertEqual(result["status"], "ok", result)
+        self.assertEqual(self._read(path), "x = 2\n")
+
+    def test_edit_files_routes_patch(self):
+        a = self._write("a.py", "x = 1\n")
+        b = self._write("b.py", "y = 2\n")
+        result = script_editor(action="edit", files=[
+            {"path": a, "edits": [{"old_code": "x = 1", "new_code": "x = 3"}]},
+            {"path": b, "edits": [{"old_code": "y = 2", "new_code": "y = 4"}]},
+        ])
+        self.assertEqual(result["status"], "ok", result)
+        self.assertEqual(result["result"]["files_changed"], 2)
+        self.assertIn("x = 3", self._read(a))
+        self.assertIn("y = 4", self._read(b))
+
+    def test_edit_new_name_routes_rename(self):
+        path = self._write("a.py", "def greet():\n    pass\n\ndef main():\n    greet()\n")
+        result = script_editor(action="edit", path=path, symbol="greet", new_name="hello")
+        self.assertEqual(result["status"], "ok", result)
+        self.assertIn("def hello", self._read(path))
+        self.assertIn("hello()", self._read(path))
+
+    def test_legacy_file_path_and_replacements(self):
+        path = self._write("a.py", "x = 1\n")
+        result = run({"action": "edit", "file_path": path,
+                      "replacements": [{"old_code": "x = 1", "new_code": "x = 2"}]})
+        self.assertEqual(result["status"], "ok", result)
+        self.assertEqual(self._read(path), "x = 2\n")
+
+    def test_hidden_params_still_accepted(self):
+        path = self._write("a.py", "x = 1\n")
+        result = run({"action": "read", "path": path, "limit": 10})
+        self.assertEqual(result["status"], "ok", result)
+
+    def test_path_conflict(self):
+        path = self._write("a.py", "x = 1\n")
+        result = run({"action": "read", "path": path, "file_path": path})
+        self.assertEqual(result["status"], "error")
+        self.assertEqual(result["code"], "conflicting_target")
+
+    def test_core_args_surface(self):
+        from script.skill import _ALIAS_ARGS, _CORE_ARGS
+        for hidden in ("file_path", "url", "content", "replacements", "limit",
+                       "diff_context", "deadline_ms", "strip_prefixes", "encoding"):
+            self.assertNotIn(hidden, _CORE_ARGS)
+            self.assertIn(hidden, _ALIAS_ARGS)
+        for core in ("path", "edits", "files", "new_name", "block", "expected_sha256"):
+            self.assertIn(core, _CORE_ARGS)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -254,9 +254,9 @@ def _norm_patch(file_path, files, edits, rename_to, default_all):
         for i, item in enumerate(files, 1):
             if not isinstance(item, dict):
                 return None, f"第 {i} 个文件不是对象"
-            path = item.get("file_path")
+            path = item.get("path") or item.get("file_path")
             if not path:
-                return None, f"第 {i} 个文件缺少 file_path"
+                return None, f"第 {i} 个文件缺少 path"
             its, err = _norm_replacements(item.get("edits"), default_all)
             if err:
                 return None, f"第 {i} 个文件: {err}"
@@ -307,41 +307,25 @@ def _rename_in_source(code, language, old, new):
 
 
 
-def script_editor(action: str = None, file_path: str = None, url: str = None,
-                  language: str = None, symbol=None, pattern: str = None,
+def script_editor(action: str = None, path: str = None, file_path: str = None,
+                  url: str = None, language: str = None, symbol=None, pattern: str = None,
                   start_line: int = None, end_line: int = None, limit: int = DEFAULT_LIMIT,
                   old_code: str = None, new_code: str = None, replace_all: bool = False,
                   dry_run: bool = False, position: str = None, with_calls: bool = False,
                   diff_context: int = None, replacements=None,
-                  expected_sha256: str = None, validate=None, deadline_ms: int = None,
+                  expected_sha256: str = None, validate=None, deadline_ms: int = 30000,
                   encoding: str = None, files=None, rename_to: str = None,
                   new_name: str = None, edits=None, block: bool = False,
                   strip_prefixes: bool = True) -> str:
     """脚本编辑 + 结构化读取工具（对齐 OpenViking / DSH 规范信封）。
 
-    数据来源（二选一）：file_path（本地文件，可写）或 url（http/https，只读）。
+    数据来源：path（本地文件可写 / http(s) 只读）；file_path、url 为兼容别名。
+    动作：read / outline / create / add / edit / delete；patch、rename_symbol 是 edit 的快捷方式。
 
-    动作：
-    - read    : symbol（单个/数组，支持裸方法名）/ pattern（正则，先符号名后按行）/
-                start_line~end_line 行范围；都不给则返回结构骨架
-    - outline : 结构骨架（含每个符号起止行号；with_calls=true 才附调用关系）
-    - create  : 新建文件（file_path 必须不存在；父目录缺失时自动创建；new_code 必填）
-    - add     : 插入 new_code，定位优先级 symbol > start_line > old_code > 文件末尾
-    - edit    : 替换，定位优先级 symbol > start_line > old_code；也可用 replacements 批量替换
-    - delete  : 删除，定位优先级 symbol > start_line > old_code
-    - patch   : 多文件补丁（files=[{file_path, edits, rename_to?}] 或 file_path+edits），
-                全部改完并校验后才落盘，任一文件失败则回滚已写文件
-    - rename_symbol : 同文件符号重命名（Python 用 tokenize，其余按词边界）
-
-    position（配合 symbol）：add 支持 start | end（符号体内首/末，默认 end）| before | after；
-    edit 仅支持 before | after，省略 position 即整段替换符号。
-    replacements（仅 edit）：数组 [{"old_code":..,"new_code":..}]，按顺序执行、后一组看到前一组
-    的结果，最后一并落盘；任一组未命中/多处歧义则整体放弃、不改文件。
-    expected_sha256：读后编辑一致性校验；read 返回的 file_id 可直接回传，文件被外部修改
-    时返回 stale_file 并拒绝写入。
-    validate：写入前语法校验，auto（默认，原文件可解析才拒绝）/ on / off。
-    deadline_ms：可选操作超时（毫秒），超时返回 timeout。
-    encoding：显式指定源文件编码（默认自动探测）。
+    edit 的批量替换用 edits（[{"old_code":..,"new_code":..}]，按顺序执行、全成或全败）；
+    edit + files 走多文件补丁；edit + symbol + new_name 走符号重命名。
+    expected_sha256：read 返回的 file_id 可回传，文件被外部修改时拒绝写入。
+    validate：auto（默认，原文件可解析才拒绝）/ on / off；deadline_ms 默认 30000ms。
     """
     act = (action or "").strip().lower()
     content_given = new_code is not None       # 显式空串也算给了内容（建空文件）
@@ -366,8 +350,36 @@ def script_editor(action: str = None, file_path: str = None, url: str = None,
     validate_mode = _validate_mode(validate)
     deadline = _deadline(deadline_ms)
 
+    # 统一数据源：path 自动区分本地路径与 http(s) URL；file_path/url 保留为别名
+    if path and (file_path or url):
+        return error("path 与 file_path/url 互斥，请只给一种来源", code="conflicting_target")
+    if path:
+        if re.match(r"^https?://", path):
+            url = path
+        else:
+            file_path = path
+
+    if act not in ("read", "outline", "add", "edit", "delete", "create", "patch",
+                   "rename_symbol"):
+        return error(f"未知操作 '{action}'（应为 read/outline/add/edit/delete/create/patch/"
+                     f"rename_symbol）", code="unknown_action")
+
+    # 动作合并：edit + files -> patch；edit + new_name -> rename_symbol
+    if act == "edit" and files is not None:
+        if new_name:
+            return error("files 与 new_name 不能同时使用", code="conflicting_target")
+        act = "patch"
+    elif act == "edit" and new_name:
+        act = "rename_symbol"
+
+    # 批量编辑参数统一为 edits；replacements 保留为别名
+    if act == "patch" and edits is None:
+        edits = replacements
+    if act == "edit" and replacements is None and edits is not None:
+        replacements = edits
+
     rpl = None
-    if replacements is not None:
+    if act == "edit" and replacements is not None:
         rpl, rerr = _norm_replacements(replacements, replace_all)
         if rerr:
             return error(rerr, code="invalid_argument")
@@ -378,21 +390,14 @@ def script_editor(action: str = None, file_path: str = None, url: str = None,
     elif url:
         src["url"] = url
     elif act != "patch":
-        return error("需要提供 file_path 或 url", code="missing_source")
-
-    if act not in ("read", "outline", "add", "edit", "delete", "create", "patch",
-                   "rename_symbol"):
-        return error(f"未知操作 '{action}'（应为 read/outline/add/edit/delete/create/patch/"
-                     f"rename_symbol）", code="unknown_action")
+        return error("需要提供 path（本地路径或 URL）", code="missing_source")
 
     if rpl is not None:
-        if act != "edit":
-            return error("replacements 仅配合 action=edit 使用", code="invalid_argument")
         if symbol or start_line is not None or old_code or block:
-            return error("replacements 与 symbol/start_line/old_code/block 互斥，请只给一种定位方式",
-                         code="conflicting_target")
+            return error("edits/replacements 与 symbol/start_line/old_code/block 互斥，"
+                         "请只给一种定位方式", code="conflicting_target")
         if new_code:
-            return error("使用 replacements 时不要再给顶层 new_code（每组自带）",
+            return error("使用 edits/replacements 时不要再给顶层 new_code（每组自带）",
                          code="conflicting_target")
 
     if block:
