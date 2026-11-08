@@ -3,29 +3,13 @@
 # status: enable
 # usage:
 #   action = read | outline | create | add | edit | delete | patch | rename_symbol
-#            （file_path 可写 / url 只读）
-#   定位（三选一）: symbol（可裸方法名）/ start_line+end_line（add 时 0=开头）/
-#     old_code 文本锚点（精确→忽略缩进→忽略标点；多处配 replace_all=true）
-#   position（配 symbol）: add 用 start|end|before|after（默认 end=符号体末尾；符号后用 after）；
-#     edit 仅 before|after，省略 = 整段替换；体内插入用 add
-#   read/pattern 取内容（缺省给骨架），outline 看结构（with_calls 附调用）；pattern 先符号名正则再按行检索
-#   写动作回 unified diff（默认 3 行上下文，过长折叠；diff_context=N 输出完整 diff），dry_run 只预览
-#   批量替换（edit）: replacements=[{"old_code":"A","new_code":"B"}, ...] 按序执行后一次落盘，
-#     一组失败整体不写；每组可选 replace_all，new_code 省略即删除
-#   多文件补丁（patch）: file_path+edits，或 files=[{"file_path":"a.py","edits":[...],"rename_to":"b.py"}]
-#     全部改完并校验后才落盘，任一文件失败回滚已写文件
-#   符号重命名: {"action":"rename_symbol","file_path":"a.py","symbol":"old","new_name":"new"}
-#   一致性: read 返回 file_id，写动作传 expected_sha256=file_id，文件被外部改过则拒绝
-#   校验: validate = auto（默认，原文件可解析才拒绝）/ on / off；deadline_ms 可选超时
-#   语法块: block=true + start_line=块内任意行，按最小 if/for/def/class/{} 块编辑或读取
-#   寄存器: replacements 每组可 capture=名字（剪切并保存）或 paste=名字（粘贴），单次调用内共享
-#   前缀剥离: new_code/content 若整段带 read 的 `N: ` 行号前缀，默认自动剥离（strip_prefixes=false 关闭）
-#   写目标保护: 拒绝把 read 的 `a.py:1-20` 或 `a.py;b.py` 误当写路径
-#   缩进用 @n:（相对插入基准，可为负）；超 limit 给 next；old_code 未命中提示最近行号
-#   new_code 也可写成 content（建文件时的常见叫法）；未知参数直接报错，避免写成空文件
+#   定位: symbol / start_line+end_line / old_code / block+start_line（最小语法块）
+#   position（配 symbol/block）: add=start|end|before|after；edit=before|after，省略整段替换
+#   写动作回 unified diff，dry_run 只预览；缩进用 @n:；new_code 别名 content
+#   一致性: read 返回 file_id，写动作传 expected_sha256 可拒绝过期编辑
+#   批量: replacements 按序执行、全成或全败；capture/paste 为单次调用内寄存器
+#   校验: validate=auto|on|off；写目标含 :1-20 或 ; 会被拒绝；strip_prefixes 默认剥离行号
 #   例: {"action":"edit","file_path":"a.py","symbol":"parse","new_code":"..."}
-#   例: {"action":"edit","file_path":"a.py","replacements":[{"old_code":"OLD1","new_code":"NEW1"}]}
-#   例: {"action":"create","file_path":"a.py","content":"print(1)"}
 from ._script_impl import script_editor
 
 try:  # android-agent / kelivo-agent：技能目录部署了 _envelope.py
