@@ -2,7 +2,8 @@
 # description: 脚本/代码增删改查（CRUD）+ 结构骨架（改代码首选）
 # status: enable
 # usage:
-#   action = read | outline | create | add | edit | delete（file_path 可写 / url 只读）
+#   action = read | outline | create | add | edit | delete | patch | rename_symbol
+#            （file_path 可写 / url 只读）
 #   定位（三选一）: symbol（可裸方法名）/ start_line+end_line（add 时 0=开头）/
 #     old_code 文本锚点（精确→忽略缩进→忽略标点；多处配 replace_all=true）
 #   position（配 symbol）: add 用 start|end|before|after（默认 end=符号体末尾；符号后用 after）；
@@ -11,6 +12,11 @@
 #   写动作回 unified diff（默认 3 行上下文，过长折叠；diff_context=N 输出完整 diff），dry_run 只预览
 #   批量替换（edit）: replacements=[{"old_code":"A","new_code":"B"}, ...] 按序执行后一次落盘，
 #     一组失败整体不写；每组可选 replace_all，new_code 省略即删除
+#   多文件补丁（patch）: file_path+edits，或 files=[{"file_path":"a.py","edits":[...],"rename_to":"b.py"}]
+#     全部改完并校验后才落盘，任一文件失败回滚已写文件
+#   符号重命名: {"action":"rename_symbol","file_path":"a.py","symbol":"old","new_name":"new"}
+#   一致性: read 返回 file_id，写动作传 expected_sha256=file_id，文件被外部改过则拒绝
+#   校验: validate = auto（默认，原文件可解析才拒绝）/ on / off；deadline_ms 可选超时
 #   缩进用 @n:（相对插入基准，可为负）；超 limit 给 next；old_code 未命中提示最近行号
 #   new_code 也可写成 content（建文件时的常见叫法）；未知参数直接报错，避免写成空文件
 #   例: {"action":"edit","file_path":"a.py","symbol":"parse","new_code":"..."}
@@ -28,7 +34,8 @@ _ARGS = (
     "action", "file_path", "url", "language", "symbol", "pattern",
     "start_line", "end_line", "limit", "old_code", "new_code", "content",
     "replace_all", "dry_run", "position", "with_calls", "diff_context",
-    "replacements",
+    "replacements", "expected_sha256", "validate", "deadline_ms", "encoding",
+    "files", "rename_to", "new_name", "edits",
 )
 
 
@@ -60,4 +67,12 @@ def run(arguments):
         with_calls=a.get("with_calls", False),
         diff_context=a.get("diff_context"),
         replacements=a.get("replacements"),
+        expected_sha256=a.get("expected_sha256"),
+        validate=a.get("validate"),
+        deadline_ms=a.get("deadline_ms"),
+        encoding=a.get("encoding"),
+        files=a.get("files"),
+        rename_to=a.get("rename_to"),
+        new_name=a.get("new_name"),
+        edits=a.get("edits"),
     )

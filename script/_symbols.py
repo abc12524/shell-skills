@@ -1,7 +1,8 @@
-"""语法层：符号结构解析（8 种语言）+ 骨架渲染。
+"""语法层：符号结构解析（12 种语言）+ 骨架渲染 + 编辑后校验。
 
-Python 走标准库 ast；C/Java/Kotlin/C#/JS/TS/Shell 走基于正则+括号配对的 BraceParser。
-对外只暴露 get_parser() / build_skeleton() / render_skeleton()，不涉及文件 IO。
+Python 走标准库 ast；C/Java/Kotlin/C#/Go/Rust/PHP/Swift/JS/TS/Shell 走基于
+正则+括号配对的 BraceParser。对外只暴露 get_parser() / build_skeleton() /
+render_skeleton() / validate_source()，不涉及文件 IO。
 """
 
 from dataclasses import dataclass
@@ -63,13 +64,21 @@ class PythonParser:
                 symbols.append(self._func_sym(node, ""))
                 calls[node.name] = self._calls_of(node)
             elif isinstance(node, ast.ClassDef):
-                symbols.append(self._class_sym(node))
-                for child in node.body:
-                    if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                        symbols.append(self._func_sym(child, node.name, kind="method"))
-                        calls[f"{node.name}.{child.name}"] = self._calls_of(child)
+                self._collect_class(node, "", symbols, calls)
 
         return ParseResult("python", len(self.lines), imports, globals_, symbols, calls)
+
+    def _collect_class(self, node: ast.ClassDef, prefix: str,
+                       symbols: List[SymbolRange], calls: Dict[str, Set[str]]) -> None:
+        """登记类，并递归内部方法与嵌套类（Outer.Inner），避免嵌套结构丢失。"""
+        name = f"{prefix}.{node.name}" if prefix else node.name
+        symbols.append(self._class_sym(node, name))
+        for child in node.body:
+            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                symbols.append(self._func_sym(child, name, kind="method"))
+                calls[f"{name}.{child.name}"] = self._calls_of(child)
+            elif isinstance(child, ast.ClassDef):
+                self._collect_class(child, name, symbols, calls)
 
     @staticmethod
     def _start_line(node: ast.AST) -> int:
@@ -100,12 +109,14 @@ class PythonParser:
         return SymbolRange(name, kind, start, node.end_lineno, sig,
                            indent=self._indent_of(node.lineno), body_start=bs, body_end=be)
 
-    def _class_sym(self, node: ast.AST) -> SymbolRange:
+    def _class_sym(self, node: ast.ClassDef, name: str = None) -> SymbolRange:
         bases = ", ".join(ast.unparse(b) for b in node.bases)
         sig = f"class {node.name}" + (f"({bases})" if bases else "")
         bs, be = self._body_bounds(node)
-        return SymbolRange(node.name, "class", node.lineno, node.end_lineno, sig,
-                           indent=self._indent_of(node.lineno), body_start=bs, body_end=be)
+        # 与函数一致：装饰器行属于符号范围，整段替换时不能漏掉
+        return SymbolRange(name or node.name, "class", self._start_line(node),
+                           node.end_lineno, sig, indent=self._indent_of(node.lineno),
+                           body_start=bs, body_end=be)
 
     @staticmethod
     def _calls_of(node: ast.AST) -> Set[str]:
@@ -148,10 +159,48 @@ class BraceParser:
         self.lines = code.splitlines()
         # 屏蔽注释与字符串，避免 "// class Foo" 之类误匹配；保持行号不变
         self.clean = self._mask_comments_and_strings(code)
+        self.clean = self._mask_preprocessor(self.clean)
         self.clean_lines = self.clean.splitlines()
 
     @staticmethod
-    def _mask_comments_and_strings(code: str) -> str:
+    def _blank(segment: str) -> str:
+        """把一段源码替换为等长的空白（保留换行），行号与列号都不漂移。"""
+        return "".join("\n" if c == "\n" else " " for c in segment)
+
+    @staticmethod
+    def _mask_preprocessor(code: str) -> str:
+        """只保留 `#if` 的第一分支，屏蔽 `#else/#elif` 分支，避免条件编译的
+        两套花括号互相干扰。指令行自身也替换为空白，保持行号。"""
+        lines = code.split("\n")
+        out: List[str] = []
+        stack: List[bool] = []          # True = 当前处于被屏蔽的第二分支
+        continued = False
+        for line in lines:
+            stripped = line.lstrip()
+            m = re.match(r"#\s*(if|ifdef|ifndef|elif|else|endif)\b", stripped)
+            if m:
+                kind = m.group(1)
+                if kind in ("if", "ifdef", "ifndef"):
+                    stack.append(False)
+                elif kind in ("else", "elif") and stack:
+                    stack[-1] = True
+                elif kind == "endif" and stack:
+                    stack.pop()
+                out.append(" " * len(line))
+                continued = line.rstrip().endswith("\\")
+                continue
+            # 其余预处理指令（#include/#define/#[attr] 等）与续行也整体屏蔽，
+            # 避免宏定义里的括号参与配对。
+            if stripped.startswith("#") or continued:
+                out.append(" " * len(line))
+                continued = line.rstrip().endswith("\\")
+                continue
+            continued = False
+            out.append(" " * len(line) if any(stack) else line)
+        return "\n".join(out)
+
+    @classmethod
+    def _mask_comments_and_strings(cls, code: str) -> str:
         out: List[str] = []
         i, n = 0, len(code)
         in_line = in_block = False
@@ -196,6 +245,16 @@ class BraceParser:
                 out.append("  ")
                 i += 2
                 continue
+            # Rust / C++ 原始字符串：转义规则不同，必须整段吞掉
+            if c in "rRbB":
+                prev = code[i - 1] if i > 0 else ""
+                if not (prev.isalnum() or prev in "_."):
+                    raw = cls._consume_raw_string(code, i)
+                    if raw is not None:
+                        end, segment = raw
+                        out.append(cls._blank(segment))
+                        i = end
+                        continue
             if c in ('"', "'", "`"):
                 quote = c
                 out.append(" ")
@@ -204,6 +263,29 @@ class BraceParser:
             out.append(c)
             i += 1
         return "".join(out)
+
+    @staticmethod
+    def _consume_raw_string(code: str, i: int):
+        """尝试在 i 处消费 Rust `r#"..."#` / C++ `R"delim(...)delim"` 原始字符串。"""
+        n = len(code)
+        # C++ 原始串优先：R"delim(...)delim"，内部允许出现普通双引号。
+        cpp = re.match(r'R"(?P<d>[^(){}\\/\s]{0,16})\(', code[i:])
+        if cpp:
+            delim = cpp.group("d")
+            body_start = i + cpp.end()
+            term = ")" + delim + '"'
+            end = code.find(term, body_start)
+            end = n if end < 0 else end + len(term)
+            return end, code[i:end]
+        rust = re.match(r'(?:br|rb|b?r)(?P<h>#{0,})"', code[i:], re.IGNORECASE)
+        if rust:
+            hashes = rust.group("h")
+            body_start = i + rust.end()
+            term = '"' + hashes
+            end = code.find(term, body_start)
+            end = n if end < 0 else end + len(term)
+            return end, code[i:end]
+        return None
 
     # ---------------- 扫描 ----------------
 
@@ -388,7 +470,7 @@ class JavaParser(BraceParser):
     ]
     FUNC_PATTERNS = [
         r"^(?:(?:public|private|protected|static|final|synchronized|abstract|native|default|\s)*"
-         r"[\w<>\[\],\?\.\s]+?)\s+(?P<name>\w+)\s*(?:<[^>]*>)?\s*\(",
+        r"[\w<>\[\],\?\.\s]+?)\s+(?P<name>\w+)\s*(?:<[^>]*>)?\s*\(",
         r"^(?:(?:public|private|protected)\s+)*(?P<name>[A-Z]\w*)\s*\(",   # 构造器
     ]
 
@@ -403,7 +485,7 @@ class KotlinParser(BraceParser):
     ]
     FUNC_PATTERNS = [
         r"^(?:(?:public|private|internal|protected|open|override|suspend|inline|operator|infix|"
-         r"tailrec|external|actual|expect|abstract)\s+)*"
+        r"tailrec|external|actual|expect|abstract)\s+)*"
         r"fun\s+(?:<[^>]*>\s*)?(?:[\w\.]+\.)?(?P<name>\w+)\s*\(",
     ]
 
@@ -432,11 +514,65 @@ class CSharpParser(BraceParser):
     ]
     FUNC_PATTERNS = [
         r"^(?:(?:public|private|protected|internal|static|virtual|override|abstract|async|sealed|"
-         r"partial|extern|unsafe|readonly|new|const|\s)*"
-         r"[\w<>\[\],\?\.\s]+?)\s+(?P<name>\w+)\s*(?:<[^>]*>)?\s*\(",
+        r"partial|extern|unsafe|readonly|new|const|\s)*"
+        r"[\w<>\[\],\?\.\s]+?)\s+(?P<name>\w+)\s*(?:<[^>]*>)?\s*\(",
         r"^(?:(?:public|private|protected|internal|static)\s+)*(?P<name>[A-Z]\w*)\s*\(",   # 构造器
     ]
     CONTROL = BraceParser.CONTROL - {"namespace", "using", "readonly"}
+
+
+class GoParser(BraceParser):
+    LANG = "go"
+    IMPORT_PATTERNS = [r'^\s*["`]([^"`]+)["`]\s*$', r'^import\s+(?:\(\s*)?["`]([^"`]+)["`]']
+    TYPE_PATTERNS = [
+        (r"^type\s+(?P<name>\w+)\s+(?:struct|interface)\b", "class"),
+        (r"^type\s+(?P<name>\w+)\b", "type"),
+    ]
+    FUNC_PATTERNS = [
+        r"^func\s+(?:\([^)]*\)\s*)?(?P<name>\w+)\s*\(",
+    ]
+
+
+class RustParser(BraceParser):
+    LANG = "rust"
+    IMPORT_PATTERNS = [r"^use\s+([\w:]+)"]
+    TYPE_PATTERNS = [
+        (r"^(?:pub(?:\([^)]*\))?\s+)?(?:unsafe\s+)?impl(?:<[^>]*>)?\s+[\w:<>]+\s+for\s+(?P<name>\w+)",
+         "class"),
+        (r"^(?:pub(?:\([^)]*\))?\s+)?(?:unsafe\s+)?impl(?:<[^>]*>)?\s+(?P<name>\w+)", "class"),
+        (r"^(?:pub(?:\([^)]*\))?\s+)?(?:struct|enum|trait|union|type)\s+(?P<name>\w+)", "type"),
+    ]
+    FUNC_PATTERNS = [
+        r'^(?:pub(?:\([^)]*\))?\s+)?(?:async\s+)?(?:const\s+)?(?:unsafe\s+)?'
+        r'(?:extern\s+"[^"]*"\s+)?fn\s+(?P<name>\w+)',
+    ]
+
+
+class PhpParser(BraceParser):
+    LANG = "php"
+    IMPORT_PATTERNS = [r"^use\s+([\w\\]+)"]
+    TYPE_PATTERNS = [
+        (r"^(?:(?:abstract|final|readonly)\s+)*(?:class|interface|trait|enum)\s+(?P<name>\w+)",
+         "class"),
+    ]
+    FUNC_PATTERNS = [
+        r"^(?:(?:public|private|protected|static|final|abstract)\s+)*function\s+&?\s*"
+        r"(?P<name>\w+)\s*\(",
+    ]
+    CONTROL = BraceParser.CONTROL - {"using", "readonly"}
+
+
+class SwiftParser(BraceParser):
+    LANG = "swift"
+    IMPORT_PATTERNS = [r"^import\s+(?:\w+\s+)?(\w+)"]
+    TYPE_PATTERNS = [
+        (r"^(?:(?:public|private|fileprivate|internal|open|final|indirect)\s+)*"
+         r"(?:class|struct|enum|protocol|extension|actor)(?!\s+func\b)\s+(?P<name>\w+)", "class"),
+    ]
+    FUNC_PATTERNS = [
+        r"^(?:(?:public|private|fileprivate|internal|open|static|class|final|override|mutating|"
+        r"nonmutating|async|convenience|required|dynamic)\s+)*func\s+(?P<name>\w+)",
+    ]
 
 
 class JavaScriptParser(BraceParser):
@@ -460,7 +596,7 @@ class JavaScriptParser(BraceParser):
     ]
     MEMBER_PATTERNS = FUNC_PATTERNS + [
         r"^(?:(?:public|private|protected|static|readonly|async|override|abstract|declare|"
-         r"get|set|\*)\s+)*(?P<name>\w+)\s*(?:<[^>]*>)?\s*\(",
+        r"get|set|\*)\s+)*(?P<name>\w+)\s*(?:<[^>]*>)?\s*\(",
     ]
     CONTROL = BraceParser.CONTROL - {"readonly"}
 
@@ -511,18 +647,25 @@ PARSERS = {
     "c": CppParser, "cpp": CppParser, "cc": CppParser, "cxx": CppParser,
     "h": CppParser, "hpp": CppParser,
     "csharp": CSharpParser, "cs": CSharpParser,
+    "go": GoParser,
+    "rust": RustParser, "rs": RustParser,
+    "php": PhpParser,
+    "swift": SwiftParser,
     "javascript": JavaScriptParser, "js": JavaScriptParser, "jsx": JavaScriptParser,
     "mjs": JavaScriptParser, "cjs": JavaScriptParser,
     "typescript": TypeScriptParser, "ts": TypeScriptParser, "tsx": TypeScriptParser,
     "shell": ShellParser, "sh": ShellParser, "bash": ShellParser, "zsh": ShellParser,
 }
 
+_C_LIKE = {"c", "cpp", "csharp", "java", "kotlin", "go", "rust", "php", "swift",
+           "javascript", "typescript"}
+
 
 _LANG_ALIAS = {
     "py": "python", "kt": "kotlin", "kts": "kotlin", "cc": "cpp", "cxx": "cpp",
     "h": "c", "hpp": "cpp", "cs": "csharp", "js": "javascript", "jsx": "javascript",
     "mjs": "javascript", "cjs": "javascript", "ts": "typescript", "tsx": "typescript",
-    "sh": "shell", "bash": "shell", "zsh": "shell",
+    "sh": "shell", "bash": "shell", "zsh": "shell", "rs": "rust",
 }
 
 
@@ -538,6 +681,42 @@ def get_parser(code: str, language: str):
         supported = ", ".join(sorted({_LANG_ALIAS.get(k, k) for k in PARSERS} - set(_LANG_ALIAS)))
         raise ValueError(f"不支持的语言 {language}（可用: {supported}）")
     return cls(code)
+
+
+def _brace_balance(clean: str) -> Tuple[bool, Optional[str]]:
+    """编辑后校验：括号是否配对（输入需已屏蔽注释/字符串）。"""
+    pairs = {")": "(", "]": "[", "}": "{"}
+    stack: List[str] = []
+    for ch in clean:
+        if ch in "([{":
+            stack.append(ch)
+        elif ch in ")]}":
+            if not stack or stack[-1] != pairs[ch]:
+                return False, f"括号不匹配：多余的 '{ch}'"
+            stack.pop()
+    if stack:
+        return False, f"括号未闭合：'{stack[-1]}'"
+    return True, None
+
+
+def validate_source(code: str, language: str) -> Tuple[bool, Optional[str]]:
+    """写盘前语法校验。Python 用 ast；类 C 语言做括号配对；纯文本/未知语言跳过。"""
+    key = _normalize_language(language)
+    if not key or key not in PARSERS:
+        return True, None
+    if key == "python":
+        try:
+            ast.parse(code)
+            return True, None
+        except SyntaxError as e:
+            return False, f"{e.msg}（第 {e.lineno} 行）"
+    try:
+        parser = get_parser(code, language)
+    except Exception as e:
+        return False, str(e)
+    if key in _C_LIKE:
+        return _brace_balance(parser.clean)
+    return True, None
 
 
 MAX_SYMBOLS = 200

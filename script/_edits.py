@@ -15,9 +15,10 @@ try:  # android-agent / kelivo-agent：技能目录部署了 _envelope.py
 except ImportError:  # shell-tool：使用 core.tools.envelope
     from core.tools.envelope import ok, error
 
-from ._text import _join_lines, _make_diff, _new_lines, _short_path, _split_lines, write_file
+from ._text import (_join_lines, _make_diff, _new_lines, _short_path, _split_lines,
+                    file_sha256, write_file)
 
-from ._symbols import SymbolRange
+from ._symbols import SymbolRange, validate_source
 
 
 def _auto_indent(new_code: str, indent: str) -> str:
@@ -325,7 +326,8 @@ def _fuzzy_add(code: str, old_code: str, new_code: str, replace_all: bool, befor
     return "\n".join(out), len(picked), level, None, None
 
 
-def _replace(code: str, old_code: str, new_code: str, replace_all: bool, unit: str = "    "):
+def _replace(code: str, old_code: str, new_code: str, replace_all: bool = False,
+             unit: str = "    "):
     """替换：先精确匹配，未命中再按行模糊匹配（忽略缩进 -> 忽略标点）。
 
     返回 (new_src, count, err, err_code, meta)；meta 形如 {"matched": "stripped"}，精确命中为 None。
@@ -460,10 +462,66 @@ def _add_after(code: str, anchor: str, new_code: str, replace_all: bool, before:
     return "".join(out), count, None, None, None
 
 
+def _tidy_seam(code: str, seam_line: int, top_gap: int = 1) -> str:
+    """删除操作后整理接缝空行：顶层定义之间最多 top_gap 行，其余最多 1 行。
+
+    只动接缝所在的连续空行块，不影响文件其它区域。
+    """
+    lines, trailing = _split_lines(code)
+    if not lines:
+        return code
+    idx = max(0, min(seam_line - 1, len(lines)))
+    start = idx
+    while start > 0 and not lines[start - 1].strip():
+        start -= 1
+    end = idx
+    while end < len(lines) and not lines[end].strip():
+        end += 1
+    next_line = lines[end] if end < len(lines) else ""
+    # 空行块后面是顶层代码（下一个顶层定义）-> 保留 top_gap；成员之间只留 1 行。
+    # 不能只看紧邻上一行：它通常是函数体的最后一条缩进语句，会把顶层间隔误判成成员间隔。
+    max_blank = top_gap if next_line.strip() and _top_level(next_line) else 1
+    if end - start > max_blank:
+        del lines[start + max_blank:end]
+    return _join_lines(lines, trailing)
+
+
+def _validate_mode(validate) -> str:
+    """归一校验模式：auto（原文件可解析才拒绝）/ on / off。"""
+    if validate is None:
+        return "auto"
+    if isinstance(validate, bool):
+        return "on" if validate else "off"
+    value = str(validate).strip().lower()
+    if value in ("true", "yes", "1"):
+        return "on"
+    if value in ("false", "no", "0"):
+        return "off"
+    return value if value in ("auto", "on", "off") else "auto"
+
+
 def _finish(file_path, encoding, newline, action, count, count_key, new_src,
-            before=None, dry_run=False, extra=None, diff_context=None):
-    """落盘并返回精简摘要 + 变更 diff（不含全量源码，省 token）"""
+            before=None, dry_run=False, extra=None, diff_context=None,
+            validate=None, language=None):
+    """落盘并返回精简摘要 + 变更 diff（不含全量源码，省 token）。
+
+    写盘前做语法校验：
+    - auto：原文件本可解析、编辑后不可解析 -> 拒绝写入（cite parse_failed）；
+      原文件本就不可解析 -> 只附 warning，不阻断修复。
+    - on：编辑后不可解析一律拒绝。
+    - off：跳过。
+    """
     payload = {"action": action, "file": _short_path(file_path), count_key: count}
+    mode = _validate_mode(validate)
+    verified = True
+    if before is not None and mode != "off" and language:
+        ok_before, _ = validate_source(before, language)
+        ok_after, verr = validate_source(new_src, language)
+        if not ok_after:
+            verified = False
+            if mode == "on" or ok_before:
+                return error(f"编辑后语法校验失败，已放弃写入 - {verr}", code="parse_failed")
+            payload["warning"] = f"语法校验失败（原文件本就不完整）: {verr}"
     if before is not None:
         payload["lines"] = [len(before.splitlines()), len(new_src.splitlines())]
         text, truncated, _ = _make_diff(before, new_src, diff_context)
@@ -474,10 +532,14 @@ def _finish(file_path, encoding, newline, action, count, count_key, new_src,
         payload.update(extra)
     if dry_run:
         payload["dry_run"] = True
+        if not verified:
+            payload["verified"] = False
+        payload["file_id"] = file_sha256(file_path)
         return ok(payload)
     werr = write_file(file_path, new_src, encoding, newline)
     if werr:
         return error(werr, code="io_error")
+    payload["file_id"] = file_sha256(file_path)
     return ok(payload)
 
 
@@ -509,6 +571,7 @@ def _create_file(file_path, new_code, dry_run=False):
     werr = write_file(file_path, text, "utf-8", "\n")
     if werr:
         return error(werr, code="io_error")
+    payload["file_id"] = file_sha256(file_path)
     return ok(payload)
 
 
