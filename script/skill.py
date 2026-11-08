@@ -3,12 +3,15 @@
 # status: enable
 # usage:
 #   action = read | outline | create | add | edit | delete | patch | rename_symbol
+#   数据源: file_path（可写）/ url（只读）；read 缺省给骨架，pattern 按符号名/正则检索
 #   定位: symbol / start_line+end_line / old_code / block+start_line（最小语法块）
 #   position（配 symbol/block）: add=start|end|before|after；edit=before|after，省略整段替换
 #   写动作回 unified diff，dry_run 只预览；缩进用 @n:；new_code 别名 content
 #   一致性: read 返回 file_id，写动作传 expected_sha256 可拒绝过期编辑
 #   批量: replacements 按序执行、全成或全败；capture/paste 为单次调用内寄存器
+#   rename_symbol: 配 symbol+new_name；patch: files=[{file_path,edits,rename_to}]
 #   校验: validate=auto|on|off；写目标含 :1-20 或 ; 会被拒绝；strip_prefixes 默认剥离行号
+#   可选: with_calls、diff_context、deadline_ms、encoding、language、replace_all、limit
 #   例: {"action":"edit","file_path":"a.py","symbol":"parse","new_code":"..."}
 from ._script_impl import script_editor
 
