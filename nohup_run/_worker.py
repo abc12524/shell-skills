@@ -1,22 +1,25 @@
 #!/usr/bin/env python3
-"""nohup_run 的后台执行器：独立进程里跑一条 `sh -c` 命令，把状态写回 job 目录。
+"""nohup_run 的后台执行器：独立进程里跑一条命令，把状态写回 job 目录。
 
-由 `skill.py` 这样启动（`start_new_session=True`，脱离调用方的会话与进程组）：
+由 `skill.py` 这样启动（脱离调用方会话 / 进程组）：
 
     python3 _worker.py <job_dir>
 
 job 目录内容：
 
-    meta.json     输入（skill.py 写）：id / command / cwd / env / timeout / name / created_at
-    status.json   输出（本进程原子替换）：state / pid / pgid / 起止时间 / exit_code
+    meta.json     输入（skill.py 写）：id / command / cwd / env / timeout / name / shell
+    status.json   输出（本进程原子替换）：state / pid / pgid / job / 起止时间 / exit_code
     output.log    命令的 stdout + stderr（直接写文件，不经过管道，无缓冲风险）
     worker.log    本进程自己的 stdout/stderr：启动失败或异常堆栈都落在这里
 
 设计要点：
-- 不导入技能包、不依赖 shell-tool，只用标准库，可单独 `python3 _worker.py <dir>` 运行。
-- 子进程再 `start_new_session=True`：`kill` 可按进程组整棵树终止（sh + 其子孙）。
-- 记录 `/proc/<pid>/stat` 的 starttime，供 `status` 判定 pid 复用，避免把别人的进程当成任务。
-- 收到 SIGTERM（`kill` 兜底路径）先杀子进程组，再落一个终态 status 后退出。
+- 不导入技能包、不依赖 shell-tool，只用标准库（平台差异在 `_plat.py`）。
+- Linux/macOS：子进程 `start_new_session=True`，`kill` 按进程组整棵树终止。
+- Windows：子进程塞进命名 Job Object（KILL_ON_JOB_CLOSE），本进程一死子树连带回收，
+  终止时 `TerminateJobObject` 一次杀光；建不出作业对象就退化 `taskkill /T /F`。
+- 记录启动签名（Linux /proc starttime、Windows FILETIME、macOS ps lstart），供 `status`
+  判定 pid 复用，避免把别人的进程当成任务。
+- 收到 SIGTERM（`kill` 兜底路径）先杀子树，再落一个终态 status 后退出。
 """
 
 import json
@@ -26,6 +29,9 @@ import subprocess
 import sys
 import time
 import traceback
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _plat  # noqa: E402 —— 同目录平台层
 
 STATE = {"job_dir": None, "status": {}, "done": False}
 
@@ -46,30 +52,6 @@ def write_json(path, data):
         f.flush()
         os.fsync(f.fileno())
     os.replace(tmp, path)
-
-
-def proc_info(pid):
-    """读 /proc/<pid>/stat → (state, starttime)；进程不存在返回 (None, None)。"""
-    try:
-        with open("/proc/%d/stat" % int(pid), "rb") as f:
-            raw = f.read().decode("utf-8", "replace")
-    except (OSError, ValueError):
-        return None, None
-    end = raw.rfind(")")
-    if end < 0:
-        return None, None
-    fields = raw[end + 2:].split()
-    if len(fields) < 20:
-        return None, None
-    return fields[0], fields[19]
-
-
-def kill_group(pgid, sig):
-    try:
-        os.killpg(int(pgid), sig)
-        return True
-    except (OSError, ValueError, TypeError):
-        return False
 
 
 def save(**extra):
@@ -105,11 +87,9 @@ def finalize(state, exit_code=None, error=None, timed_out=False, note=None):
 
 
 def on_signal(signum, _frame):
-    pgid = STATE["status"].get("pgid")
-    if pgid:
-        kill_group(pgid, signal.SIGTERM)
-        time.sleep(0.5)
-        kill_group(pgid, signal.SIGKILL)
+    _plat.term_tree(STATE["status"], hard=False)
+    time.sleep(0.5)
+    _plat.term_tree(STATE["status"], hard=True)
     finalize("killed", note="worker 收到信号 %d" % signum)
     os._exit(128 + signum)
 
@@ -122,25 +102,38 @@ def main(argv):
 
     job_dir = os.path.abspath(argv[1])
     STATE["job_dir"] = job_dir
-    signal.signal(signal.SIGHUP, signal.SIG_IGN)
-    signal.signal(signal.SIGINT, signal.SIG_IGN)
-    signal.signal(signal.SIGTERM, on_signal)
+    # Windows 上没有 SIGHUP / SIGKILL，逐个 hasattr 兜住
+    for name, action in (
+        ("SIGHUP", signal.SIG_IGN),
+        ("SIGINT", signal.SIG_IGN),
+        ("SIGTERM", on_signal),
+    ):
+        sig = getattr(signal, name, None)
+        if sig is not None:
+            try:
+                signal.signal(sig, action)
+            except (OSError, ValueError, RuntimeError):
+                pass
 
     with open(os.path.join(job_dir, "meta.json"), encoding="utf-8") as f:
         meta = json.load(f)
 
+    job_id = str(meta.get("id") or os.path.basename(job_dir))
     started = now()
     STATE["status"] = {
         "id": meta.get("id"),
         "state": "running",
         "pid": os.getpid(),
-        "pid_start": proc_info(os.getpid())[1],
+        "pid_start": _plat.start_sig(os.getpid()),
         "started_at": started,
         "started_at_iso": iso(started),
         "command": meta.get("command"),
         "cwd": meta.get("cwd"),
         "timeout": float(meta.get("timeout") or 0),
+        "platform": _plat.PLATFORM,
+        "shell": meta.get("shell"),
         "pgid": None,
+        "job": None,
         "child_pid": None,
         "child_start": None,
         "exit_code": None,
@@ -155,35 +148,36 @@ def main(argv):
     env = os.environ.copy()
     for key, value in (meta.get("env") or {}).items():
         env[str(key)] = "" if value is None else str(value)
-    env["NOHUP_RUN_ID"] = str(meta.get("id") or "")
+    env["NOHUP_RUN_ID"] = job_id
     env["NOHUP_RUN_JOB_DIR"] = job_dir
 
     timeout = float(meta.get("timeout") or 0)
     command = str(meta.get("command") or "")
     log_path = os.path.join(job_dir, "output.log")
+    kill_flag = os.path.join(job_dir, "kill.flag")
+
+    # Windows：整个任务树关进一个命名作业对象，本进程退出即连带回收
+    job_name = None
+    if _plat.IS_WIN:
+        candidate = "Local\\NOHUPRUN_" + job_id
+        if _plat.make_job(candidate):
+            job_name = candidate
 
     with open(log_path, "ab", buffering=0) as logf:
-        header = "# nohup_run %s  %s\n# cwd: %s\n# cmd: %s\n" % (
-            meta.get("id"), iso(started), cwd, command,
+        header = "# nohup_run %s  %s  [%s]\n# cwd: %s\n# cmd: %s\n" % (
+            meta.get("id"), iso(started), _plat.PLATFORM, cwd, command,
         )
         logf.write(header.encode("utf-8", "replace"))
         try:
-            proc = subprocess.Popen(
-                ["/bin/sh", "-c", command],
-                cwd=cwd,
-                env=env,
-                stdin=subprocess.DEVNULL,
-                stdout=logf,
-                stderr=subprocess.STDOUT,
-                start_new_session=True,
-                close_fds=True,
+            proc, extra = _plat.spawn_child(
+                command, cwd, env, logf, shell=meta.get("shell"), job_name=job_name
             )
         except OSError as exc:
             logf.write(("# 启动子进程失败: %s\n" % exc).encode("utf-8", "replace"))
             finalize("failed", error="启动子进程失败: %s" % exc)
             return 1
 
-        save(child_pid=proc.pid, child_start=proc_info(proc.pid)[1], pgid=proc.pid)
+        save(child_pid=proc.pid, child_start=_plat.start_sig(proc.pid), **extra)
 
         code = None
         timed_out = False
@@ -191,24 +185,26 @@ def main(argv):
             code = proc.wait(timeout=timeout if timeout > 0 else None)
         except subprocess.TimeoutExpired:
             timed_out = True
-            kill_group(proc.pid, signal.SIGTERM)
+            _plat.term_tree(STATE["status"], hard=False)
             try:
                 code = proc.wait(timeout=3)
             except subprocess.TimeoutExpired:
-                kill_group(proc.pid, signal.SIGKILL)
+                _plat.term_tree(STATE["status"], hard=True)
                 try:
                     code = proc.wait(timeout=5)
                 except subprocess.TimeoutExpired:
                     code = None
 
         end = now()
+        # Windows 上被杀进程退出码是正整数（1），跟普通失败分不开；靠 skill.py 落的 kill.flag
+        kill_requested = os.path.exists(kill_flag)
         if timed_out:
             state = "timeout"
         elif code is None:
             state = "lost"
         elif code == 0:
             state = "finished"
-        elif code < 0:
+        elif kill_requested or code < 0:
             state = "killed"
         else:
             state = "failed"

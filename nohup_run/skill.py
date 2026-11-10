@@ -1,22 +1,25 @@
 # skill: nohup_run
-# description: Linux 后台跑命令（nohup 式）：提交后立即返回任务 id，再查列表 / 状态 / 日志 / 等待 / 终止
+# description: 后台跑命令（nohup 式）：提交即返回任务 id，再查列表 / 状态 / 日志 / 等待 / 终止；Linux / macOS / Windows
 # status: enable
 # usage:
 #   arguments.action = run | list | status | log | wait | kill | clean
-#   run: command（必填，/bin/sh -c）+ 可选 cwd（默认 $HOME，不是进程 cwd）/ name / timeout（秒，0=不限）/ env
+#   run: command（必填）+ 可选 cwd（默认 $HOME，不是进程 cwd）/ name / timeout（秒，0=不限）/ env / shell
+#        shell 仅 Windows 生效：powershell（默认，有 pwsh 用 pwsh）| cmd | 其它值当可执行文件
 #   status|log|wait|kill: id = 完整 id 或 前缀 / 后缀 / 片段 / name / last；status 可加 log=true；wait 上限 60s（超时不杀任务）
 #   list: 可选 state=running|finished|failed|all（默认 all）、limit（默认 20）
-#   clean: 可选 older_than（小时，默认 24）、min_age（秒，默认 600，更近的不删除非 confirm）、id、dry_run、confirm
+#   clean: 可选 older_than（小时，默认 24）、min_age（秒，默认 600，更近的不删除非 confirm）/ id、dry_run、confirm
 #   示例: {"action":"run","command":"make -j8 2>&1","cwd":"/data/app","timeout":1800,"name":"build"}
+#         {"action":"run","command":"npm ci 2>&1","cwd":"D:/app","name":"npm"}   # Windows 默认走 powershell
 #         {"action":"status","id":"build","log":true} / {"action":"log","id":"fc90"}
-#   长命令（编译 / 下载 / 部署）一律先 run：秒回 id 不阻塞本回合，之后 list / status / wait 轮询。
+#   长命令（编译 / 安装 / 下载 / 部署）一律先 run：秒回 id 不阻塞本回合，之后 list / status / wait 轮询。
 import json
 import os
 import shutil
-import signal
-import subprocess
 import sys
 import time
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _plat  # noqa: E402 —— 同目录平台层（存活判定 / 杀树 / 解释器 / shell / 解码）
 
 try:  # android-agent / kelivo-agent：技能目录部署了 _envelope.py
     from _envelope import ok, error
@@ -80,54 +83,9 @@ def _write_json(path, data):
     os.replace(tmp, path)
 
 
-def _proc_info(pid):
-    """读 /proc/<pid>/stat → (state, starttime)；不存在返回 (None, None)。"""
-    try:
-        with open("/proc/%d/stat" % int(pid), "rb") as f:
-            raw = f.read().decode("utf-8", "replace")
-    except (OSError, ValueError, TypeError):
-        return None, None
-    end = raw.rfind(")")
-    if end < 0:
-        return None, None
-    fields = raw[end + 2:].split()
-    if len(fields) < 20:
-        return None, None
-    return fields[0], fields[19]
-
-
-def _alive(pid, start=None):
-    """进程是否还活着；给了 starttime 就同时校验，防 pid 复用。僵尸算死。"""
-    if not pid:
-        return False
-    state, cur = _proc_info(pid)
-    if state is None or state == "Z":
-        return False
-    if start is not None and str(cur) != str(start):
-        return False
-    return True
-
-
 def _clip(text, limit=120):
     text = " ".join(str(text or "").split())
     return text if len(text) <= limit else text[: limit - 1] + "…"
-
-
-def _python():
-    """挑一个真正的 python 解释器（避免把 shell-tool 自身的可执行文件当解释器）。"""
-    for cand in (
-        os.environ.get("NOHUP_RUN_PYTHON"),
-        sys.executable,
-        shutil.which("python3"),
-        shutil.which("python"),
-    ):
-        if not cand:
-            continue
-        if "python" not in os.path.basename(cand).lower():
-            continue
-        if os.path.isfile(cand) and os.access(cand, os.X_OK):
-            return cand
-    return None
 
 
 def _job_dirs():
@@ -195,7 +153,7 @@ def _read_log(job_dir, chars=DEFAULT_LOG_CHARS):
     except OSError:
         return "", 0
     size = len(raw)
-    text = raw.decode("utf-8", "replace")
+    text = _plat.decode(raw)
     if chars and chars > 0:
         chars = min(int(chars), HARD_LOG_CHARS)
         if len(text) > chars:
@@ -217,9 +175,9 @@ def _view(job_dir, full=False):
         state = "pending" if (created and _now() - created < 5) else "lost"
 
     orphan = False
-    if state == "running" and not _alive(st.get("pid"), st.get("pid_start")):
+    if state == "running" and not _plat.alive(st.get("pid"), st.get("pid_start"), verify=full):
         # 执行器没了：子进程还在就算 orphan（继续跑），否则判 lost
-        if _alive(st.get("pgid"), st.get("child_start")):
+        if _plat.alive(st.get("pgid"), st.get("child_start"), verify=full):
             orphan = True
         else:
             state = "lost"
@@ -262,12 +220,9 @@ def _view(job_dir, full=False):
 
 # --------------------------------------------------------------------- action ---
 def _run(a):
-    if os.name == "nt" or not sys.platform.startswith("linux"):
-        return error("nohup_run 仅支持 Linux（POSIX）；其他平台请直接用 shell 工具", code="unsupported_platform")
-
     command = a.get("command")
     if not isinstance(command, str) or not command.strip():
-        return error("缺少 command（要后台执行的 shell 命令）", code="missing_argument")
+        return error("缺少 command（要后台执行的命令）", code="missing_argument")
 
     # 默认目录不用进程 cwd（服务化运行时往往是 /usr/local/bin 之类），统一落到 $HOME；
     # 需要别的目录就显式传 cwd，或用 NOHUP_RUN_CWD 固定。
@@ -287,7 +242,7 @@ def _run(a):
     if not isinstance(env, dict):
         return error("env 必须是对象（键值对）", code="bad_request")
 
-    python = _python()
+    python = _plat.python_exe()
     if not python:
         return error("找不到可用的 python3 解释器（可用 NOHUP_RUN_PYTHON 指定）", code="not_found")
 
@@ -298,30 +253,25 @@ def _run(a):
     os.makedirs(job_dir, mode=0o700, exist_ok=True)
 
     created = _now()
+    shell = str(a.get("shell") or "").strip() or None
     meta = {
         "id": job_id,
         "command": command,
         "cwd": cwd,
         "env": {str(k): ("" if v is None else str(v)) for k, v in env.items()},
         "timeout": timeout,
+        "shell": shell,
         "name": (str(a.get("name") or "").strip()[:60] or None),
         "created_at": created,
         "created_at_iso": _iso(created),
+        "platform": _plat.PLATFORM,
     }
     _write_json(os.path.join(job_dir, "meta.json"), meta)
 
     worker_log = os.path.join(job_dir, "worker.log")
     fd = os.open(worker_log, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
     try:
-        subprocess.Popen(
-            [python, WORKER, job_dir],
-            cwd=job_dir,
-            stdin=subprocess.DEVNULL,
-            stdout=fd,
-            stderr=fd,
-            start_new_session=True,
-            close_fds=True,
-        )
+        _, detached_warn = _plat.spawn_worker([python, WORKER, job_dir], job_dir, fd)
     except OSError as exc:
         return error("启动后台执行器失败: %s" % exc, code="spawn_failed")
     finally:
@@ -334,8 +284,8 @@ def _run(a):
         time.sleep(0.05)
     if not os.path.exists(status_path):
         try:
-            with open(worker_log, encoding="utf-8", errors="replace") as f:
-                detail = f.read()[-600:] or "（worker.log 为空）"
+            with open(worker_log, "rb") as f:
+                detail = _plat.decode(f.read()[-1200:]) or "（worker.log 为空）"
         except OSError:
             detail = "（读不到 worker.log）"
         return error("后台任务未能启动，见 %s" % worker_log, code="spawn_failed", detail=detail)
@@ -343,6 +293,8 @@ def _run(a):
     view = _view(job_dir)
     if view["state"] in ACTIVE:
         view["next"] = "action=status id=%s（或 list / wait）" % job_id
+    if detached_warn:
+        view["warning"] = detached_warn
     return ok(view)
 
 
@@ -437,33 +389,50 @@ def _kill(a):
 
     st = _read_json(os.path.join(job_dir, "status.json")) or {}
     hard = str(a.get("signal") or "").strip().upper() in ("KILL", "9", "SIGKILL")
-    pgid = st.get("pgid") or st.get("child_pid")
+    target = st.get("pgid") or st.get("child_pid")
 
-    if pgid:
-        for sig in ((signal.SIGKILL,) if hard else (signal.SIGTERM, signal.SIGKILL)):
-            try:
-                os.killpg(int(pgid), sig)
-            except (OSError, ValueError, TypeError):
-                pass
-            deadline = _now() + 2.0
-            while _now() < deadline:
-                if not _alive(pgid, st.get("child_start")):
-                    break
-                time.sleep(0.1)
+    # 先落标记：Windows 里被杀进程的退出码是正整数（1），跟普通失败分不开，靠它纠正成 killed
+    try:
+        with open(os.path.join(job_dir, "kill.flag"), "w", encoding="utf-8") as f:
+            f.write("%.0f\n" % _now())
+    except OSError:
+        pass
 
-    # 兜底：执行器仍在就送 SIGTERM（它会自己杀子进程组并落终态）
-    if _alive(st.get("pid"), st.get("pid_start")):
-        try:
-            os.kill(int(st["pid"]), signal.SIGTERM)
-        except OSError:
-            pass
-
-    deadline = _now() + 3.0
-    while _now() < deadline:
-        view = _view(job_dir)
-        if view["state"] in TERMINAL:
-            break
+    # 先礼后兵：POSIX 走 SIGTERM → SIGKILL；Windows 没有 SIGTERM 语义，一步到硬终止（Job → taskkill）
+    _plat.term_tree(st, hard=hard)
+    deadline = _now() + 2.0
+    while _now() < deadline and _plat.alive(target, st.get("child_start"), verify=True):
         time.sleep(0.1)
+    if _plat.alive(target, st.get("child_start"), verify=True):
+        _plat.term_tree(st, hard=True)
+
+    # 等执行器自己落终态（子进程一死它就会写 killed，别抢在它前面把它打掉）
+    view = _view(job_dir)
+    deadline = _now() + 3.0
+    while _now() < deadline and view["state"] not in TERMINAL:
+        time.sleep(0.1)
+        view = _view(job_dir)
+
+    # 执行器还赖着不写终态：兜底通知它（POSIX SIGTERM / Windows TerminateProcess）
+    if view["state"] not in TERMINAL and _plat.alive(st.get("pid"), st.get("pid_start"), verify=True):
+        _plat.signal_worker(st.get("pid"))
+        deadline = _now() + 2.0
+        while _now() < deadline and view["state"] not in TERMINAL:
+            time.sleep(0.1)
+            view = _view(job_dir)
+
+    # 还不落终态就自己写，别留一个永远 running / lost 的任务
+    if view["state"] not in TERMINAL:
+        st.update({
+            "state": "killed",
+            "ended_at": _now(),
+            "ended_at_iso": _iso(_now()),
+            "forced": True,
+            "note": "执行器未在超时内落终态，由 kill 强制标记",
+        })
+        _write_json(os.path.join(job_dir, "status.json"), st)
+        view = _view(job_dir)
+
     view["killed"] = view["state"] in TERMINAL
     return ok(view)
 

@@ -2,7 +2,7 @@
   "version": 1,
   "name": "shell-skills",
   "description": "shell-tool 可下载的技能集：每个技能一个文件夹，内含入口脚本与配置模板。",
-  "platforms": ["linux", "windows", "android", "ios"],
+  "platforms": ["linux", "windows", "macos", "android", "ios"],
   "skills": [
     {
       "name": "aria2",
@@ -166,11 +166,11 @@
     },
     {
       "name": "nohup_run",
-      "description": "Linux 后台跑命令（nohup 式）：提交立即返回任务 id，可查任务列表 / 状态 / 运行时长 / 日志 / 等待 / 终止",
-      "platform": ["linux"],
+      "description": "后台跑命令（nohup 式）：提交立即返回任务 id，可查任务列表 / 状态 / 运行时长 / 日志 / 等待 / 终止；Linux / macOS / Windows",
+      "platform": ["linux", "macos", "windows"],
       "path": "nohup_run",
       "entry": "skill.py",
-      "version": "1.1.0",
+      "version": "1.2.0",
       "requires": [],
       "config": []
     },
