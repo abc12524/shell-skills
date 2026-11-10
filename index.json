@@ -383,6 +383,16 @@
       "version": "1.0.0",
       "requires": [],
       "config": []
+    },
+    {
+      "name": "witr",
+      "description": "witr（Why Is This Running）速查手册：进程 / PID / 端口 / 文件 / 容器 → 启动链与来源，含退出码与排查场景（纯文档，不执行命令）",
+      "platform": ["linux", "windows", "macos", "android", "ios"],
+      "path": "witr",
+      "entry": "skill.py",
+      "version": "1.0.0",
+      "requires": [],
+      "config": []
     }
   ]
 }

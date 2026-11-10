@@ -50,7 +50,8 @@ shell-skills/
 ├── tplink_ptz/         TP-Link 摄像头 PTZ 云台控制
 ├── tts/                Edge TTS 语音合成（文字转 MP3，支持音色 / 语速 / 音量 / 音调）
 ├── wait/               等待指定秒数（最长 600 秒）
-└── weather/            wttr.in 天气查询（默认武汉）
+├── weather/            wttr.in 天气查询（默认武汉）
+└── witr/               witr（Why Is This Running）命令速查：进程 / 端口 / PID / 文件 / 容器溯源（纯文档，不执行命令）
 ```
 
 > 每个技能文件夹内含入口脚本 `skill.py`、可选的配置模板与 `_` 前缀助手模块；
