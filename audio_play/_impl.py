@@ -13,6 +13,7 @@
 只认系统默认设备，指定其它设备时返回 device_not_supported 并给出解决建议。
 """
 
+import glob
 import locale
 import os
 import re
@@ -60,9 +61,47 @@ def _decode(raw):
     return raw.decode("utf-8", "replace")
 
 
-def _run(cmd, timeout=20):
+def _audio_env():
+    """子进程环境：Linux 上补上 PulseAudio / PipeWire 的 socket 路径。
+
+    服务进程（shell-tool / 守护进程）常在没有登录会话时启动，XDG_RUNTIME_DIR 为空，
+    pactl / paplay 找不到 /run/user/<uid>/pulse/native，只报「连接失败」。
+    这里按 XDG_RUNTIME_DIR → /run/user/<uid> → 系统级 socket 的顺序探测并补齐。
+    """
+    global _ENV_CACHE
+    if _ENV_CACHE is not None:
+        return _ENV_CACHE
+    env = dict(os.environ)
+    if IS_WIN or IS_MAC or env.get("PULSE_SERVER"):
+        _ENV_CACHE = env
+        return env
+    uid = os.getuid() if hasattr(os, "getuid") else None
+    runtime = env.get("XDG_RUNTIME_DIR") or ""
+    candidates = []
+    if runtime:
+        candidates.append(os.path.join(runtime, "pulse", "native"))
+    if uid is not None:
+        candidates.append("/run/user/%d/pulse/native" % uid)
+    candidates += sorted(glob.glob("/run/user/*/pulse/native"))
+    candidates += ["/run/pulse/native", "/var/run/pulse/native"]
+    for path in candidates:
+        if not os.path.exists(path):
+            continue
+        env["PULSE_SERVER"] = "unix:" + path
+        if not env.get("XDG_RUNTIME_DIR") and path.startswith("/run/user/"):
+            env["XDG_RUNTIME_DIR"] = os.path.dirname(os.path.dirname(path))
+        break
+    _ENV_CACHE = env
+    return env
+
+
+_ENV_CACHE = None
+
+
+def _run(cmd, timeout=20, env=None):
     try:
-        proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=timeout)
+        proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                              timeout=timeout, env=env if env is not None else _audio_env())
     except (OSError, subprocess.TimeoutExpired) as exc:
         return 1, "", str(exc)
     return proc.returncode, _decode(proc.stdout), _decode(proc.stderr)
@@ -85,14 +124,15 @@ def _unlink(path):
         pass
 
 
-def _spawn(cmd, watch=0.4):
+def _spawn(cmd, env=None, watch=0.4):
     """脱离父进程启动播放器，不等播放结束。
 
     watch 秒内如果播放器已经异常退出，把 stderr 尾部带回去——常见于
     文件损坏 / 编码不支持 / 后端参数不被接受；正常播放则直接返回进程。
     """
     log = tempfile.NamedTemporaryFile(prefix="audio_play_", suffix=".log", delete=False)
-    kwargs = dict(stdout=subprocess.DEVNULL, stderr=log, stdin=subprocess.DEVNULL)
+    kwargs = dict(stdout=subprocess.DEVNULL, stderr=log, stdin=subprocess.DEVNULL,
+                  env=env if env is not None else _audio_env())
     if IS_WIN:
         # CREATE_NO_WINDOW 不弹控制台；CREATE_NEW_PROCESS_GROUP 便于与父进程解耦
         kwargs["creationflags"] = 0x08000000 | 0x00000200
@@ -170,6 +210,59 @@ class Backend:
             )
 
 
+def _pulse_env():
+    """pactl 输出按 C locale 解析（中文环境下键名会变成「名称：/描述：」，无法辨认）。"""
+    env = dict(_audio_env())
+    env["LC_ALL"] = "C"
+    env["LANG"] = "C"
+    env["LANGUAGE"] = "C"
+    return env
+
+
+def _pulse_sink_list():
+    """pactl list sinks 解析（PulseBackend 与 Linux 上的 ffplay 共用）。"""
+    code, out, err = _run([_which("pactl"), "list", "sinks"], env=_pulse_env())
+    if code != 0 and not out.strip():
+        hint = ""
+        if "连接" in err or "connect" in err.lower():
+            hint = ("（PulseAudio/PipeWire 连接失败：检查 PULSE_SERVER / XDG_RUNTIME_DIR "
+                    "是否指向 /run/user/<uid>/pulse/native）")
+        raise BackendError("pactl 枚举失败: %s%s" % (err.strip() or "无输出", hint),
+                           code="backend_error")
+    default = _pulse_default_sink()
+    items = []
+    block = {}
+    for line in out.splitlines() + ["Sink #"]:
+        if line.startswith("Sink #"):
+            name = block.get("Name")
+            if name:
+                items.append({
+                    "id": name,
+                    "name": block.get("Description") or name,
+                    "default": name == default,
+                })
+            block = {}
+            continue
+        if ":" in line:
+            key, value = line.split(":", 1)
+            key = key.strip()
+            if key in ("Name", "Description") and key not in block:
+                block[key] = value.strip()
+    if not items and out.strip():
+        raise BackendError("pactl 输出无法解析（不是预期的 sinks 列表）", code="backend_error")
+    return _index_devices(items)
+
+
+def _pulse_default_sink():
+    env = _pulse_env()
+    code, out, _ = _run([_which("pactl"), "get-default-sink"], env=env)
+    if code == 0 and out.strip():
+        return out.strip().splitlines()[0].strip()
+    code, out, _ = _run([_which("pactl"), "info"], env=env)
+    match = re.search(r"^Default Sink:\s*(.+)$", out, re.MULTILINE)
+    return match.group(1).strip() if match else ""
+
+
 class PulseBackend(Backend):
     """Linux：PulseAudio / PipeWire（pactl 枚举，paplay 或 pw-play 播放）。"""
 
@@ -180,38 +273,8 @@ class PulseBackend(Backend):
     def available(cls):
         return bool(_which("pactl")) and bool(_which("paplay", "pw-play"))
 
-    def _default_name(self):
-        code, out, _ = _run([_which("pactl"), "get-default-sink"])
-        if code == 0 and out.strip():
-            return out.strip().splitlines()[0].strip()
-        code, out, _ = _run([_which("pactl"), "info"])
-        match = re.search(r"^Default Sink:\s*(.+)$", out, re.MULTILINE)
-        return match.group(1).strip() if match else ""
-
     def devices(self):
-        code, out, err = _run([_which("pactl"), "list", "sinks"])
-        if code != 0 and not out.strip():
-            raise BackendError("pactl 枚举失败: %s" % (err.strip() or "无输出"), code="backend_error")
-        default = self._default_name()
-        items = []
-        block = {}
-        for line in out.splitlines() + ["Sink #"]:
-            if line.startswith("Sink #"):
-                name = block.get("Name")
-                if name:
-                    items.append({
-                        "id": name,
-                        "name": block.get("Description") or name,
-                        "default": name == default,
-                    })
-                block = {}
-                continue
-            if ":" in line:
-                key, value = line.split(":", 1)
-                key = key.strip()
-                if key in ("Name", "Description") and key not in block:
-                    block[key] = value.strip()
-        return _index_devices(items)
+        return _pulse_sink_list()
 
     def play(self, path, device):
         dev = (device or {}).get("id") or ""
@@ -260,7 +323,8 @@ class MpvBackend(Backend):
 
 
 class FfplayBackend(Backend):
-    """ffplay：Windows 上枚举真实端点但只能输出默认设备。"""
+    """ffplay：Windows 枚举真实端点但只能输出默认设备；
+    Linux 上有 pactl 时可用 PULSE_SINK 精确选 sink（没有 paplay 的兜底）。"""
 
     name = "ffplay"
     can_select = False
@@ -272,12 +336,23 @@ class FfplayBackend(Backend):
     def devices(self):
         if IS_WIN:
             return _win_devices()
+        if not IS_MAC and _which("pactl"):
+            sinks = _pulse_sink_list()
+            if sinks:
+                self.can_select = True  # PULSE_SINK 可精确指定 sink
+                return sinks
         return [_default_device()]
 
     def play(self, path, device):
-        self._require_default(device)
+        dev = (device or {}).get("id") or ""
+        env = None
+        if dev and self.can_select:
+            env = dict(_audio_env())
+            env["PULSE_SINK"] = dev
+        elif dev:
+            self._require_default(device)
         cmd = [_which("ffplay"), "-nodisp", "-autoexit", "-loglevel", "error", "-i", path]
-        return _spawn(cmd)
+        return _spawn(cmd, env)
 
 
 class AfplayBackend(Backend):
@@ -490,12 +565,26 @@ else:
 
 
 def pick_backend():
+    """按优先级找第一个「能真的枚举出设备」的后端（可用但跑不动就继续下一个）。"""
+    errors = []
     for cls in _BACKENDS:
         try:
-            if cls.available():
-                return cls()
-        except Exception:  # noqa: BLE001 —— 单个后端探测失败不影响其它后端
-            continue
+            if not cls.available():
+                continue
+            backend = cls()
+            backend.devices()  # 探活：pactl 连不上之类的问题在这里暴露
+            return backend
+        except BackendError as exc:
+            errors.append("%s: %s" % (cls.name, exc.message))
+        except Exception as exc:  # noqa: BLE001 —— 单个后端探测失败不影响其它后端
+            errors.append("%s: %s" % (cls.name, exc))
+    if errors:
+        raise BackendError(
+            "没有可用的音频后端（%s）。Linux 上若是 PulseAudio/PipeWire 连接失败，"
+            "通常是 XDG_RUNTIME_DIR / PULSE_SERVER 没指向 /run/user/<uid>/pulse/native"
+            % "；".join(errors),
+            code="no_backend",
+        )
     raise BackendError(
         "未找到可用的音频后端（Linux: pactl+paplay 或 mpv/ffplay；macOS: mpv 或 afplay；"
         "Windows: mpv/ffplay）",
@@ -547,8 +636,7 @@ def resolve_device(devices, value):
 
 
 def play_audio(path, device_value=None):
-    backend = pick_backend()
-    devices = backend.devices()
+    backend, devices = list_devices()
     device = resolve_device(devices, device_value)
     proc = backend.play(path, device)
     return backend, device, proc

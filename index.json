@@ -30,7 +30,7 @@
       "platform": ["linux", "windows", "macos"],
       "path": "audio_play",
       "entry": "skill.py",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "requires": [],
       "config": []
     },
