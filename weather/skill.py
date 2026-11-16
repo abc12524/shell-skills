@@ -1,7 +1,7 @@
 # skill: weather
 # description: wttr.in 天气查询（默认武汉）：Markdown 日报 / 一行摘要 / 结构化 JSON，可落盘
 # usage:
-#   arguments.location = 地点（默认 Wuhan；别名 city / loc / place / site 同样接受）
+#   arguments.location = 地点（默认 Wuhan）
 #   arguments.days   = 0（当天，默认）| 3（含未来两天；wttr.in 实际只提供 3 天）
 #   arguments.format = markdown（默认表格日报）| text（一行摘要）| json（结构化）
 #   arguments.output = 写入文件，如 /tmp/weather.md
