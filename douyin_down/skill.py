@@ -172,7 +172,7 @@ def run(arguments):
     if action == "list":
         return _list_action(out_dir, str(args.get("work_id") or "").strip(),
                             int(_as_float(args.get("limit"), 50)))
-    share = str(args.get("share") or "").strip()
+    share = str(args.get("share") or args.get("url") or "").strip()
     if not share:
         return error("缺少参数 share（分享文案 / 短链 / 作品 URL）",
                      code="invalid_argument")
