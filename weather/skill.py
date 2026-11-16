@@ -1,7 +1,7 @@
 # skill: weather
 # description: wttr.in 天气查询（默认武汉）：Markdown 日报 / 一行摘要 / 结构化 JSON，可落盘
 # usage:
-#   arguments.location = 地点（默认 Wuhan）
+#   arguments.location = 地点（默认 Wuhan；别名 city / loc / place / site 同样接受）
 #   arguments.days   = 0（当天，默认）| 3（含未来两天；wttr.in 实际只提供 3 天）
 #   arguments.format = markdown（默认表格日报）| text（一行摘要）| json（结构化）
 #   arguments.output = 写入文件，如 /tmp/weather.md
@@ -33,6 +33,8 @@ except ImportError:  # shell-tool：使用 core.tools.envelope
 
 WTTR_URL = "https://wttr.in/{location}?format=j1&lang=zh"
 DEFAULT_LOCATION = "Wuhan"
+# 相似参数名兼容（见 skill_guide 参数容错规则）：按顺序取第一个非空值
+LOCATION_ALIASES = ("location", "city", "loc", "place", "site")
 VALID_DAYS = (0, 3)
 FORMATS = ("markdown", "text", "json")
 TIMEOUT = 15
@@ -251,11 +253,20 @@ def build_markdown(data, location, days):
     return "\n".join(lines)
 
 
+def pick_location(a):
+    """取地点：location 优先，兼容 city / loc / place / site；都没给则默认武汉。"""
+    for key in LOCATION_ALIASES:
+        value = a.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return DEFAULT_LOCATION
+
+
 def run(arguments):
     """skill 入口：arguments -> {"status": "ok", "result": {...}} / error 信封。"""
     a = arguments or {}
 
-    location = str(a.get("location") or "").strip() or DEFAULT_LOCATION
+    location = pick_location(a)
 
     raw_days = a.get("days", 0)
     try:
