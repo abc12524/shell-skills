@@ -15,6 +15,7 @@ shell-skills/
 ├── README.md
 ├── aria2/              aria2 下载管理（新建 / 列表 / 详情 / 暂停 / 继续 / 删除）
 ├── at/                 定时任务管理（创建 / 查看 / 删除到点执行一次的命令）
+├── audio_play/         音频播放（Linux/Windows/macOS）：列出输出设备 / 指定设备播放，启动即返回
 ├── baidu_search/       百度搜索 / 百科查询
 ├── codegraph/          代码图谱检索（codegraph CLI：符号 / 调用关系 / 影响面 / 任务上下文 / 建索引）
 ├── deepseek_search/    DeepSeek 网页搜索 / 抓取（官方自研搜索引擎）

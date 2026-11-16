@@ -25,6 +25,16 @@
       "config": []
     },
     {
+      "name": "audio_play",
+      "description": "音频播放（Linux / Windows / macOS）：列出输出设备、按设备播放音频文件，启动即返回",
+      "platform": ["linux", "windows", "macos"],
+      "path": "audio_play",
+      "entry": "skill.py",
+      "version": "1.0.0",
+      "requires": [],
+      "config": []
+    },
+    {
       "name": "baidu_search",
       "description": "百度搜索 / 百科查询",
       "platform": ["linux", "windows", "android", "ios"],
