@@ -198,6 +198,15 @@ def _params(a, filter_name, format_default="term"):
         p["format"] = fmt
     if a.get("lossless") in TRUTHY:
         p["lossless"] = "true"
+    mc = a.get("max_chars")
+    if mc not in (None, "", 0, "0"):
+        try:
+            mc = int(mc)
+        except (TypeError, ValueError):
+            return None, "max_chars 必须是正整数"
+        if mc < 200:
+            return None, "max_chars 不能小于 200"
+        p["max_chars"] = str(mc)
     if filter_name and filter_name != "none":
         p["filter"] = filter_name
     return p, None
@@ -464,10 +473,17 @@ def trim(text, format="term", mode="auto", timeout=TIMEOUT, **_options):
     if not isinstance(text, str) or not text:
         raise ValueError("trim: text 不能为空")
     base = _host({})  # 地址只来自 config.json / RTK_WEB_HOST，读坏会抛 RuntimeError
+    opts = {"format": format, "mode": mode, "timeout": timeout}
+    # 宿主的两个可选旋钮：max_chars 让它按字符预算裁（服务端保住报错行），
+    # lossless 只做 ANSI + 重复行折叠、绝不截断。都透传给 /api/compress。
+    if _options.get("max_chars"):
+        opts["max_chars"] = _options["max_chars"]
+    if _options.get("lossless") in TRUTHY:
+        opts["lossless"] = True
     res, err = _compress_bytes(
         base,
         text.encode("utf-8"),
-        {"format": format, "mode": mode, "timeout": timeout},
+        opts,
         _num(timeout, TIMEOUT),
     )
     if res is None:
@@ -483,7 +499,7 @@ def run(arguments):
             "service": SERVICE,
             "actions": list(ACTIONS),
             "params": ["cmd", "text", "path", "filter", "mode", "format", "lossless",
-                       "shell", "cwd", "timeout", "charset", "host"],
+                       "max_chars", "shell", "cwd", "timeout", "charset", "host"],
             "note": "filter 取值见 action=filters；mode=auto 省得多，chain 可预期",
         })
     if action not in ACTIONS:
