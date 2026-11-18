@@ -1,6 +1,6 @@
 # skill: rtk_web
 # description: rtk-web 文本压缩（HTTP 服务）：执行命令 / 压缩文本 / 上传文件，返回精简输出与节省统计
-# status: enable
+# status: disable
 # usage:
 #   arguments.action = run（默认，本地执行 cmd 并压缩 stdout+stderr）| text | file | filters | health
 #   arguments.cmd | text | path = 对应输入：命令串 / 待压缩文本 / 文本文件路径
@@ -8,11 +8,17 @@
 #   arguments.mode = auto（默认，激进有损，省得多）| chain（固定链，可预期）
 #   arguments.format = term（默认；action=file 时默认按文件名推断）| json | web | matches | lockfile | auto
 #   arguments.lossless = true 只做 ansi+dedup；另支持 shell(bash/powershell/cmd/none)、cwd、timeout、charset、host
+#   宿主扩展: trim(text, **opts) -> str —— 纯文本进/出，供 shell-tool 等宿主直调，不走信封
 #   配置: RTK_WEB_HOST（默认 http://127.0.0.1:8787）；仅标准库
 #   返回: result.text = 压缩后文本；bytes/tokens/saved_percent = 统计；run 另有 exit_code、compression
-#   例: {"action":"run","cmd":"ls -l"} / {"action":"run","cmd":"cargo test","cwd":"D:/repo"}
-#   例: {"action":"text","text":"..."} / {"action":"file","path":"build.log"} / {"action":"filters","q":"cargo"}
+#   例: {"action":"run","cmd":"ls -l"} / {"action":"text","text":"..."} / {"action":"file","path":"build.log"}
 """rtk_web —— 把命令输出 / 文本交给局域网 rtk-web 服务压缩，返回 LLM 友好的精简文本。
+
+两个入口：
+  * run(arguments) —— 技能约定入口，给 LLM 用：返回统一信封（ok/error）+ 统计。
+  * trim(text, **opts) —— 宿主程序扩展入口，不走信封：纯文本进、纯文本出，失败抛异常。
+    shell-tool 的 execute_system_command 就调它（见 core/tools/output_trim.py），
+    因此本技能声明 status: disable —— 不向 LLM 披露，但仍可按名字执行 / 被程序导入。
 
 服务端点：
   POST {host}/api/compress?format=&mode=&charset=&lossless=&filter=   body = 原始文本
@@ -443,6 +449,30 @@ def _compress_bytes(host, data, a, timeout, filter_name=None):
     if clipped:
         res["note"] = "输入超过 9 MiB，已本地首尾截断"
     return res, None
+
+
+def trim(text, format="term", mode="auto", timeout=TIMEOUT, **_options):
+    """宿主程序扩展点：纯文本进、纯文本出，失败抛异常（不返回 ok()/error() 信封）。
+
+    与 run() 的分工：run 是给 LLM 的技能入口，返回信封 + 统计；trim 给 shell-tool
+    这类宿主内部调用，只要压缩后的文本，宿主不必再解一层 JSON。
+    服务地址只认本技能自己的 config.json（RTK_WEB_HOST），宿主不传。
+
+    实现上复用 _compress_bytes：与 action=text 同语义——不按命令名推断 filter、
+    超过 9 MiB 本地首尾截断、4xx/连不上都抛异常（由宿主决定降级）。
+    """
+    if not isinstance(text, str) or not text:
+        raise ValueError("trim: text 不能为空")
+    base = _host({})  # 地址只来自 config.json / RTK_WEB_HOST，读坏会抛 RuntimeError
+    res, err = _compress_bytes(
+        base,
+        text.encode("utf-8"),
+        {"format": format, "mode": mode, "timeout": timeout},
+        _num(timeout, TIMEOUT),
+    )
+    if res is None:
+        raise RuntimeError(err or "rtk-web 压缩失败")
+    return res["text"]
 
 
 def run(arguments):
