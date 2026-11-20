@@ -4,9 +4,9 @@ import time
 import unittest
 
 import _bootstrap  # noqa: F401
-from script._script_impl import (_DeadlineExceeded, _check_deadline, _deadline,
+from edit._script_impl import (_DeadlineExceeded, _check_deadline, _deadline,
                                  script_editor)
-from script.skill import run
+from edit.skill import run
 
 
 class ScriptEditorTests(unittest.TestCase):
@@ -132,7 +132,7 @@ class ScriptEditorTests(unittest.TestCase):
 
     def test_patch_rolls_back_written_files(self):
         from unittest import mock
-        from script import _script_impl
+        from edit import _script_impl
         a = self._write("a.py", "def a():\n    return 1\n")
         b = self._write("b.py", "def b():\n    return 2\n")
         real = _script_impl.write_file
@@ -190,7 +190,7 @@ class ScriptEditorTests(unittest.TestCase):
         self.assertEqual(result["code"], "unknown_argument")
 
     def test_shifted_drift_match(self):
-        from script import _edits
+        from edit import _edits
         src = "a=1\nb=2\nc=0\nd=4\ne=5\n"
         old = "a=1\nb=2\nc=3\nd=4\ne=5"
         out, _count, err, _code, meta = _edits._replace(src, old, "a=1\nb=2\nc=9\nd=4\ne=5")
@@ -333,7 +333,7 @@ class ScriptEditorTests(unittest.TestCase):
         self.assertEqual(result["code"], "conflicting_target")
 
     def test_core_args_surface(self):
-        from script.skill import _ALIAS_ARGS, _CORE_ARGS
+        from edit.skill import _ALIAS_ARGS, _CORE_ARGS
         for hidden in ("file_path", "url", "content", "code", "replacements", "limit",
                        "diff_context", "deadline_ms", "strip_prefixes", "encoding"):
             self.assertNotIn(hidden, _CORE_ARGS)

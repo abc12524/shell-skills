@@ -7,7 +7,7 @@
 > 以 `_` 开头的文件（如 `_skill_runner.py`、`_envelope.py`）是运行时内部文件，不会被注册。
 
 `skill` 工具只负责**调用**已注册的 skill（以及 `delete` 注销），不再负责创建脚本。
-新增 skill 的方式是把脚本文件写进本目录（推荐用 `script` skill 写入：`create` 新建 /
+新增 skill 的方式是把脚本文件写进本目录（推荐用 `edit` skill 写入：`create` 新建 /
 `edit` 改写），或用 `skill_hub` 工具从远程仓库下载安装。
 
 ## 技能布局
@@ -113,7 +113,7 @@ def run(arguments):
   例：`weather` 的 `location` 未提供、为空或键名写错 → 直接返回默认地点（Wuhan）的天气。
   判定标准：默认值**只读、幂等、无外部副作用**（查询 / 转换 / 统计类）。
 - **无法安全默认的技能 → 返回该技能自己的 usage**（action 列表 + 核心参数 + 示例），
-  不要空跑、不要猜。例：`script` 缺 `path` / `action` 时无从知道改哪个文件 → 返回用法，
+  不要空跑、不要猜。例：`edit` 缺 `path` / `action` 时无从知道改哪个文件 → 返回用法，
   错误码用 `unknown_action` / `invalid_argument`。
 - 写文件、删除、发消息、上传等**有副作用**的技能一律归入第二类：宁可返回 usage 让调用方补齐，
   也不要用默认值擅自动手。
@@ -122,7 +122,7 @@ def run(arguments):
 ### 2. 相似参数名要兼容，但在代码里消化，不写进 usage
 
 - 对常见同义 / 大小写 / 拼写变体**在代码里归一化后正常执行**，不要回「未知参数」。
-  例：`weather` 的 `location` 内部兼容 `city` / `loc` / `place`；`script` 的 `path` 内部兼容
+  例：`weather` 的 `location` 内部兼容 `city` / `loc` / `place`；`edit` 的 `path` 内部兼容
   `file_path` / `url`。
 - 归一化放在 `run()` 入口（`_ALIASES` / `_ALIAS_ARGS` 等兼容表）：取第一个非空值生效，
   别名不进错误提示；历史别名长期保留，仍可按旧名调用。

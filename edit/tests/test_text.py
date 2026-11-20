@@ -3,7 +3,7 @@ import tempfile
 import unittest
 
 import _bootstrap  # noqa: F401
-from script import _text
+from edit import _text
 
 
 class TextTests(unittest.TestCase):

@@ -1,4 +1,4 @@
-# skill: script
+# skill: edit
 # description: 脚本/代码增删改查（CRUD）+ 结构骨架（改代码首选）
 # status: enable
 # usage:

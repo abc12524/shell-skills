@@ -255,12 +255,12 @@
       "config": ["S1_HOST", "S1_USERNAME", "S1_PASSWORD", "S1_COOKIE_FILE"]
     },
     {
-      "name": "script",
+      "name": "edit",
       "description": "脚本/代码增删改查（CRUD）+ 结构骨架 + 多文件补丁/符号重命名/语法块，统一 path/edits 参数（改代码首选）",
       "platform": ["linux", "windows", "android", "ios"],
-      "path": "script",
+      "path": "edit",
       "entry": "skill.py",
-      "version": "1.8.0",
+      "version": "1.9.0",
       "requires": [],
       "config": []
     },

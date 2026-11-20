@@ -1,7 +1,7 @@
 import unittest
 
 import _bootstrap  # noqa: F401
-from script import _edits
+from edit import _edits
 
 
 class EditPrimitiveTests(unittest.TestCase):

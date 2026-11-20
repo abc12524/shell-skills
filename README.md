@@ -22,6 +22,7 @@ shell-skills/
 ├── doubao_search/      Feedcoop 豆包搜索 API（web_search / global_search）
 ├── douyin_down/        抖音分享链接解析与下载（短链 / 作品信息 / 画质选择 / 视频·图集）
 ├── dustls/             磁盘占用分析（dust 纯数据输出，LLM 友好）
+├── edit/               脚本/代码增删改查 + 结构骨架 + 多文件补丁/符号重命名/语法块（path/edits 统一）
 ├── exif/               图片 EXIF 工具（读取 / 移除 GPS / 移除全部 / 写入 / 备注）
 ├── ftp/                FTP/FTPS 文件传输（ftplib，兼容 vsftpd：上传 / 下载 / 删除 / 列表）
 ├── home_assistant/     Home Assistant 智能家居（实体状态 / 服务调用 / 历史日志 / 模板渲染）
@@ -38,7 +39,6 @@ shell-skills/
 ├── qbittorrent/        qBittorrent 下载管理（新建 / 列表 / 详情 / 暂停 / 继续 / 删除）
 ├── rtk_web/            rtk-web 文本压缩（HTTP 服务）：命令输出 / 文本 / 文件 → 精简文本 + 节省统计
 ├── s1/                 Stage1st 论坛浏览（版块 / 帖子 / 回复 / 登录）
-├── script/             脚本/代码增删改查 + 结构骨架 + 多文件补丁/符号重命名/语法块（path/edits 统一）
 ├── sensor/             Android 传感器读取（列出传感器名 / 按名称读实时值；仅 Android）
 ├── skill_config/       技能配置助手：传技能名返回待配键，用户给值后写回 config.json 并回显文件全文
 ├── skill_guide/        如何编写 skill：规范、要求与示例（内置 skill_README.md）
@@ -111,7 +111,7 @@ except ImportError:  # shell-tool
     from core.tools.envelope import ok, error
 ```
 
-> 只用标准库的技能（如 `at` / `script`）可两处通用；依赖第三方包（如 `requests`）的技能
+> 只用标准库的技能（如 `at` / `edit`）可两处通用；依赖第三方包（如 `requests`）的技能
 > 在移动端需先安装对应包。
 
 ## index.json 结构

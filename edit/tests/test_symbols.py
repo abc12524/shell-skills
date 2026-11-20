@@ -1,7 +1,7 @@
 import unittest
 
 import _bootstrap  # noqa: F401
-from script import _symbols
+from edit import _symbols
 
 
 class SymbolTests(unittest.TestCase):
